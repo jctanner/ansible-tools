@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# A hackaround for test-module and pdb and ansible 2.x
+#
+# Usage:
+#   test-module-v2 -m <modulepath> -a @<argsfile>
+#
+# Notes:
+#   * space delimited args are not functional, use an args file with @ instead
+#   * pdb can be used in module code with this script
+
+CWD=$(pwd)
+
+SCRATCH=/tmp/test_module_scratch
+if [ -d $SCRATCH ]; then
+    rm -rf $SCRATCH
+fi
+mkdir -p $SCRATCH
+
+# Render/Join/Zip the module
+echo "#####################################"
+echo "#  Calling test-module ..." 
+echo "#####################################"
+test-module -o $SCRATCH/zipped_module.py -n $@
+echo "Done."
+
+cd $SCRATCH
+
+# Unzip the module
+echo "#####################################"
+echo "#  Exploding zipped module ..." 
+echo "#####################################"
+python zipped_module.py explode
+echo "Done."
+
+# Get the args
+echo "#####################################"
+echo "#  Extracting parameter args ..." 
+echo "#####################################"
+JSONARGS=$(fgrep -m1 ZIPLOADER_PARAMS zipped_module.py | sed -e 's/^[[:space:]]*//')
+#echo $JSONARGS
+python -c "import os; import json; $JSONARGS; ARGS=json.loads(ZIPLOADER_PARAMS); print ARGS; open('args.json', 'wb').write(json.dumps(ARGS, indent=2))"
+echo "Done."
+
+# Overwrite _load_params to not use stdin (thereby allowing pdb to function)
+echo "#####################################"
+echo "# Patching _load_params ..." 
+echo "#####################################"
+sed -i.bak 's/sys.stdin.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
+sed -i.bak 's/sys.stdin.buffer.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
+echo "Done."
+
+# Run the extracted module with args
+echo "#####################################"
+echo "# Running the module code now ..."
+echo "#####################################"
+mkdir strace.out
+#strace -fftttvo strace.out/test python ansible_module_*.py
+python ansible_module_*.py
+echo "Done."

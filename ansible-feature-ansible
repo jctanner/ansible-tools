@@ -1,0 +1,40 @@
+#!/bin/bash
+
+TOPDIR=$(pwd)
+BRANCH=$1
+GITHUBUSER=jctanner
+
+if [ -d ansible ]; then
+    rm -rf ansible
+fi
+
+# git the main repo first
+git clone git@github.com:$GITHUBUSER/ansible
+
+cd ansible
+
+# add upstream
+echo "Syncing upstream"
+git remote add upstream https://github.com/ansible/ansible.git
+git fetch upstream
+git merge upstream/devel
+
+# new branch or existing branch?
+git branch -a | fgrep "remotes/origin/$BRANCH" > /dev/null
+RC=$?
+if [ "$RC" == "0" ]; then
+    git checkout -b $BRANCH remotes/origin/$BRANCH
+else    
+    git checkout -b $BRANCH
+    #git push origin $BRANCH
+fi
+
+# get core
+echo "Checking out core modules"
+cd $TOPDIR/ansible/lib/ansible/modules/core
+git clone git@github.com:$GITHUBUSER/ansible-modules-core .
+
+# get extras
+echo "Checking out extras modules"
+cd $TOPDIR/ansible/lib/ansible/modules/extras
+git clone git@github.com:$GITHUBUSER/ansible-modules-extras .

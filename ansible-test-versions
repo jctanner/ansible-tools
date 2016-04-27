@@ -8,6 +8,8 @@ CWD=$(pwd)
 VERSIONS=$(ansible-list-versions)
 BASEDIR=/tmp
 
+RESULTS=""
+
 for VERSION in $VERSIONS; do
     echo "###################################"
     echo $VERSION
@@ -20,4 +22,10 @@ for VERSION in $VERSIONS; do
 
     bash $TESTSCRIPT
     RC=$?
+    RESULTS="$RESULTS;$VERSION:$RC"
+done
+
+IFS=';'
+for RES in $RESULTS; do
+    echo $RES
 done

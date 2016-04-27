@@ -1,0 +1,20 @@
+#!/bin/bash
+
+unset PYTHONPATH
+unset MANPATH
+unset ANSIBLE_HOME
+unset ANSIBLE_LIBRARY
+#unset PATH
+#source /etc/bashrc
+#source ~/.bashrc
+#source ~/.bash_profile
+
+NEWPATH=""
+for P in $(echo $PATH | tr ':' '\n'); do
+    if [[ "$P" != *"/ansible."* ]]; then
+        #echo $P
+        NEWPATH="$NEWPATH:$P"
+    fi
+done
+NEWPATH=$(echo $NEWPATH | sed 's/^\://g')
+PATH=$NEWPATH

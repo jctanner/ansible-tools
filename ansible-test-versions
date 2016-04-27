@@ -17,6 +17,7 @@ for VERSION in $VERSIONS; do
     VERSIONDIR="$BASEDIR/ansible.$VERSION"
     HACKING="$VERSIONDIR/hacking/env-setup"
     if [ -f $HACKING ]; then
+        source $(which ansible-clear-hacking)
         source $HACKING > /dev/null 2>&1
     fi
 

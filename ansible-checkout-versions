@@ -16,14 +16,25 @@ for VERSION in $VERSIONS; do
 
         # submodules start at v1.8.0
         if [[ $VERSION < v1.8.0 ]]; then
+            echo "## deleting submodules ..."
             rm -rf rm -rf lib/ansible/modules/*
         fi
         
+        echo "## checking out tag ..."
         git checkout tags/$VERSION
         RC=$?
         if [[ $RC != 0 ]]; then
             exit $RC
         fi
+
+        if [[ $VERSION > v1.7.2 ]]; then
+            echo "## updating submodules ..."
+            git submodule update
+            RC=$?
+            if [[ $RC != 0 ]]; then
+                exit $RC
+            fi
+        fi            
     fi
     cd $CWD
 done

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+TESTSCRIPT=$1
+
+ansible-checkout-versions
+
+CWD=$(pwd)
+VERSIONS=$(ansible-list-versions)
+BASEDIR=/tmp
+
+for VERSION in $VERSIONS; do
+    echo "###################################"
+    echo $VERSION
+    echo "###################################"
+    VERSIONDIR="$BASEDIR/ansible.$VERSION"
+    HACKING="$VERSIONDIR/hacking/env-setup"
+    if [ -f $HACKING ]; then
+        source $HACKING > /dev/null 2>&1
+    fi
+
+    bash $TESTSCRIPT
+    RC=$?
+done

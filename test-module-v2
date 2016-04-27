@@ -46,8 +46,13 @@ echo "Done."
 echo "#####################################"
 echo "# Patching _load_params ..." 
 echo "#####################################"
-sed -i.bak 's/sys.stdin.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
-sed -i.bak 's/sys.stdin.buffer.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
+if [ ! -d debug_dir ]; then
+    sed -i.bak 's/sys.stdin.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
+    sed -i.bak 's/sys.stdin.buffer.read()/open("args\.json",\ "rb")\.read()/' ansible/module_utils/basic.py
+else
+    sed -i.bak 's/sys.stdin.read()/open("args\.json",\ "rb")\.read()/' debug_dir/ansible/module_utils/basic.py
+    sed -i.bak 's/sys.stdin.buffer.read()/open("args\.json",\ "rb")\.read()/' debug_dir/ansible/module_utils/basic.py
+fi    
 echo "Done."
 
 # Run the extracted module with args
@@ -56,5 +61,11 @@ echo "# Running the module code now ..."
 echo "#####################################"
 mkdir strace.out
 #strace -fftttvo strace.out/test python ansible_module_*.py
-python ansible_module_*.py
+if [ ! -d debug_dir ]; then
+    python ansible_module_*.py
+else
+    cd debug_dir
+    ln -s ../args.json args.json
+    python ansible_module_*.py
+fi
 echo "Done."

@@ -1,0 +1,29 @@
+#!/bin/bash
+
+CWD=$(pwd)
+VERSIONS=$(ansible-list-versions)
+CACHEDIR=/tmp/ansible.checkout.clean
+BASEDIR=/tmp
+
+for VERSION in $VERSIONS; do
+    echo $VERSION
+
+    # git checkout tags/<tag_name>
+    CHECKOUTDIR="$BASEDIR/ansible.$VERSION"
+    if [ ! -d $CHECKOUTDIR ]; then
+        cp -Rp $CACHEDIR $CHECKOUTDIR
+        cd $CHECKOUTDIR
+
+        # submodules start at v1.8.0
+        if [[ $VERSION < v1.8.0 ]]; then
+            rm -rf rm -rf lib/ansible/modules/*
+        fi
+        
+        git checkout tags/$VERSION
+        RC=$?
+        if [[ $RC != 0 ]]; then
+            exit $RC
+        fi
+    fi
+    cd $CWD
+done

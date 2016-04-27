@@ -24,6 +24,9 @@ for VERSION in $VERSIONS; do
     bash $TESTSCRIPT
     RC=$?
     RESULTS="$RESULTS;$VERSION:$RC"
+
+    echo "## RC: $RC"
+    echo ""
 done
 
 IFS=';'

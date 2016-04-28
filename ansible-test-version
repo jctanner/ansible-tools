@@ -24,4 +24,4 @@ RC=$?
 
 echo "## RC: $RC"
 
-
+exit $RC

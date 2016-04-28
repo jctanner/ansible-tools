@@ -1,0 +1,27 @@
+#!/bin/bash
+
+INVERSION=$1
+TESTSCRIPT=$2
+
+ansible-checkout-versions
+
+CWD=$(pwd)
+VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
+BASEDIR=/tmp
+
+echo "###################################"
+echo $VERSION
+echo "###################################"
+VERSIONDIR="$BASEDIR/ansible.$VERSION"
+HACKING="$VERSIONDIR/hacking/env-setup"
+if [ -f $HACKING ]; then
+    source $(which ansible-clear-hacking)
+    source $HACKING > /dev/null 2>&1
+fi
+
+bash $TESTSCRIPT
+RC=$?
+
+echo "## RC: $RC"
+
+

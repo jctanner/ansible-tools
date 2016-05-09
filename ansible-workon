@@ -1,0 +1,70 @@
+#!/bin/bash
+
+REPO=$1 #AP,AMC,AME
+ID=$2
+BASEDIR=~/workspace/issues
+
+TICKETDIR="$BASEDIR/$REPO-$ID"
+if [ ! -d $TICKETDIR ]; then
+    mkdir -p $TICKETDIR
+fi
+
+cd $TICKETDIR
+
+#########################################
+#   INVENTORY 
+#########################################
+
+INVENTORYFILE=inventory
+if [ ! -f $INVENTORYFILE ]; then
+    echo "el6host ansible_ssh_host=10.0.0.106" > inventory
+fi
+
+#########################################
+#   PLAYBOOK 
+#########################################
+
+cat << EOF > site.yml
+- hosts: el6host
+  gather_facts: False
+  tasks:
+    - shell: whoami
+EOF
+
+#########################################
+#   TEST SCRIPT
+#########################################
+
+cat << EOF > test.sh
+#!/bin/bash
+VERSION=\$(ansible --version | head -n1 | awk '{print \$2}')
+ansible-playbook -vvvv -i inventory site.yml
+EOF
+chmod +x test.sh
+
+#########################################
+#   REPORT SCRIPT
+#########################################
+
+cat << EOF > report.sh
+#!/bin/bash
+
+# | Tables        | Are           | Cool  |
+# | ------------- |:-------------:| -----:|
+# | col 3 is      | right-aligned | $1600 |
+# | col 2 is      | centered      |   $12 |
+# | zebra stripes | are neat      |    $1 |
+
+# nostate.log
+# withstate.log
+
+VERSIONS=\$(ansible-list-versions)
+
+echo "version | rc"
+echo "------ | ------"
+for VERSION in \$VERSIONS; do
+    #echo "## \$VERSION"
+    STATERC=\$(fgrep "\$VERSION:" allversions.log | tail -n1 | cut -d\: -f2)
+    echo "\$VERSION | \$STATERC"
+done
+EOF

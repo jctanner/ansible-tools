@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Expect to be in a directory named (AP|AMC|AME)-ISSUEID
+CWD=$(pwd)
+DIRPATH=$(basename $CWD)
+echo $DIRPATH
+
+REPO=$(echo $DIRPATH | cut -d\- -f1)
+TICKETID=$(echo $DIRPATH | cut -d\- -f2)
+
+echo $REPO
+echo $TICKETID
+
+if [ ! -d ansible.ansible ]; then
+    git clone https://github.com/ansible/ansible ansible.ansible
+fi    
+if [ ! -d ansible.ansible-modules-core ]; then
+    git clone https://github.com/ansible/ansible-modules-core.git ansible.ansible-modules-core
+fi
+if [ ! -d ansible.ansible-modules-extras ]; then
+    git clone https://github.com/ansible/ansible-modules-extras.git ansible.ansible-modules-extras
+fi
+
+# https://help.github.com/articles/checking-out-pull-requests-locally/
+case $REPO in
+    "AP")
+        echo "ANSIBLE PROJECT PR #$TICKETID"
+        cd $CWD/ansible.ansible
+        git fetch origin pull/$TICKETID/head:TEST_$TICKETID
+        cd $CWD
+        ;;
+    "AMC")
+        echo "ANSIBLE MODULES CORE PR #$TICKETID"
+        cd $CWD/ansible.ansible-modules-core
+        git fetch origin pull/$TICKETID/head:TEST_$TICKETID
+        cd $CWD
+        ;;
+    "AME")
+        echo "ANSIBLE MODULES EXTRAS PR #$TICKETID"
+        cd $CWD/ansible.ansible-modules-extras
+        git fetch origin pull/$TICKETID/head:TEST_$TICKETID
+        cd $CWD
+        ;;    
+esac        
+
+cd $CWD/ansible.ansible/lib/ansible/modules
+if [ -d core ]; then
+    rm -rf core
+fi
+if [ -d extras ]; then
+    rm -rf extras
+fi 
+if [ ! -L core ]; then
+    ln -s ../../../../ansible.ansible-modules-core core
+fi    
+if [ ! -L extras ]; then
+    ln -s ../../../../ansible.ansible-modules-extras extras
+fi
+
+echo $REPO

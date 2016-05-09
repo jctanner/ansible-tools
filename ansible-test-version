@@ -19,7 +19,8 @@ if [ -f $HACKING ]; then
     source $HACKING > /dev/null 2>&1
 fi
 
-bash $TESTSCRIPT
+chmod +x $TESTSCRIPT
+./$TESTSCRIPT
 RC=$?
 
 echo "## RC: $RC"

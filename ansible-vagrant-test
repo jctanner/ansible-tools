@@ -7,7 +7,7 @@
 #
 #   USECASES:
 #   * "Localized" testing of an ansible checkout inside a VM
-#   * ansible unit or integration ([non]-destructive) tests
+#   * ansible unit or integration ([non_]destructive) tests
 
 TEST_TYPE=$1  # unit or integration
 CWD=$(pwd)

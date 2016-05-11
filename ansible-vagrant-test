@@ -45,6 +45,32 @@ if [ ! -d ansible ] && [ ! -L ansible ]; then
     #USAGE
 fi
 
+function FIXSSH() {
+    vagrant ssh-config > ssh.config
+
+    COMMAND="echo 'vagrant:root' | sudo chpasswd"
+    ssh -F ssh.config -tt default "$COMMAND"
+    COMMAND="echo 'vagrant:vagrant' | sudo chpasswd"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo cp -Rp ~vagrant/.ssh /root/"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo chown -R root:root /root/.ssh"
+    ssh -F ssh.config -tt default "$COMMAND"
+}
+
+function INSTALL_EL_PACKAGES() {
+    COMMAND="yum -y install ansible python-pip python-nose python-mock python-coverage"
+    ssh -F ssh.config -tt root@default "$COMMAND"
+
+    COMMAND="rpm -e --nodeps ansible"
+    ssh -F ssh.config -tt root@default "$COMMAND"
+
+    COMMAND="yum -y install vim-enhanced git subversion mercurial unzip zip"
+    ssh -F ssh.config -tt root@default "$COMMAND"
+}
+
 #
 # NOCLEAN=true will skip deleting existing boxes
 #
@@ -61,28 +87,6 @@ if [ -z $NOCLEAN ]; then
     fi
     vagrant init geerlingguy/$TARGET
     vagrant up
-    vagrant ssh-config > ssh.config
-
-    COMMAND="echo 'vagrant:root' | sudo chpasswd"
-    ssh -F ssh.config -tt default "$COMMAND"
-    COMMAND="echo 'vagrant:vagrant' | sudo chpasswd"
-    ssh -F ssh.config -tt default "$COMMAND"
-
-    COMMAND="sudo cp -Rp ~vagrant/.ssh /root/"
-    ssh -F ssh.config -tt default "$COMMAND"
-
-    COMMAND="sudo chown -R root:root /root/.ssh"
-    ssh -F ssh.config -tt default "$COMMAND"
-
-    COMMAND="sudo yum -y install ansible python-pip python-nose python-mock python-coverage"
-    ssh -F ssh.config -tt default "$COMMAND"
-
-    COMMAND="sudo rpm -e --nodeps ansible"
-    ssh -F ssh.config -tt default "$COMMAND"
-
-    COMMAND="sudo yum -y install vim-enhanced git subversion mercurial unzip zip"
-    ssh -F ssh.config -tt default "$COMMAND"
-
 else
     echo "# NOT CLEANING"
 fi    
@@ -94,16 +98,31 @@ fi
 vagrant up
 
 #
-# Grab the ssh config and use it for direct ssh commands
+# Fixup ssh ...
 #
-if [ ! -f ssh.config ]; then
-    vagrant ssh-config > ssh.config
-fi    
+
+FIXSSH
+
+#
+# Validate ssh ...
+#
+
 ssh -F ssh.config default 'whoami'
 RC=$?
 if [[ $RC != 0 ]]; then
     exit $RC
 fi
+ssh -F ssh.config root@default 'whoami'
+RC=$?
+if [[ $RC != 0 ]]; then
+    exit $RC
+fi
+
+#
+# Install package requirements ...
+#
+
+INSTALL_EL_PACKAGES
 
 #
 # Assemble the test command ...
@@ -131,3 +150,6 @@ esac
 # TESTS SHOULD BE RUN AS ROOT (FOR NOW)
 echo $COMMAND
 ssh -F ssh.config -tt root@default "$COMMAND"
+
+
+

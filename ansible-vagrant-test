@@ -63,10 +63,24 @@ if [ -z $NOCLEAN ]; then
     vagrant up
     vagrant ssh-config > ssh.config
 
-    COMMAND="sudo yum -y install git vim-enhanced ansible python-pip python-nose python-mock python-coverage"
+    COMMAND="echo 'vagrant:root' | sudo chpasswd"
+    ssh -F ssh.config -tt default "$COMMAND"
+    COMMAND="echo 'vagrant:vagrant' | sudo chpasswd"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo cp -Rp ~vagrant/.ssh /root/"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo chown -R root:root /root/.ssh"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo yum -y install ansible python-pip python-nose python-mock python-coverage"
     ssh -F ssh.config -tt default "$COMMAND"
 
     COMMAND="sudo rpm -e --nodeps ansible"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo yum -y install vim-enhanced git subversion mercurial"
     ssh -F ssh.config -tt default "$COMMAND"
 
 else
@@ -91,6 +105,9 @@ if [[ $RC != 0 ]]; then
     exit $RC
 fi
 
+#
+# Assemble the test command ...
+#
 
 case $TEST_TYPE in
     unit)
@@ -111,5 +128,6 @@ case $TEST_TYPE in
         ;;
 esac
 
+# TESTS SHOULD BE RUN AS ROOT (FOR NOW)
 echo $COMMAND
-ssh -F ssh.config -tt default "$COMMAND"
+ssh -F ssh.config -tt root@default "$COMMAND"

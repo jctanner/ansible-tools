@@ -80,7 +80,7 @@ if [ -z $NOCLEAN ]; then
     COMMAND="sudo rpm -e --nodeps ansible"
     ssh -F ssh.config -tt default "$COMMAND"
 
-    COMMAND="sudo yum -y install vim-enhanced git subversion mercurial"
+    COMMAND="sudo yum -y install vim-enhanced git subversion mercurial unzip zip"
     ssh -F ssh.config -tt default "$COMMAND"
 
 else

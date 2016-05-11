@@ -1,0 +1,99 @@
+#!/bin/bash
+
+#set -e
+#set -u
+#set -x
+
+TEST_TYPE=$1  # unit or integration
+CWD=$(pwd)
+
+
+if [[ $TEST_TYPE == "help" ]]; then
+    THIS=$(basename "$0")
+    echo ""
+    echo "Usage: TARGET=centos7 $THIS <test_type>"
+    echo ""
+    echo "Available TARGET(s):"
+    echo "  * centos7"
+    echo "  * centos6"
+    echo ""
+    echo "Optional Exports:"
+    echo "  * NOCLEAN=true              ... do not wipe out pre-existing vagrant boxes"
+    echo "  * TEST_FLAGS='-t test_git'  ... typical ansible test flags for limiting tests"
+    echo "  * MAKE_TARGET='destructive' ... typical ansible test flags for limiting tests"
+    echo ""
+    echo "Notes:"
+    echo "  * Only run this from a directory where an 'ansible' subdir exists"
+    echo "  * vagrant and virtualbox must be installed and functional for your user"
+    echo ""
+    exit 0
+fi
+
+#
+# NOCLEAN=true will skip deleting existing boxes
+#
+
+NOCLEAN=${NOCLEAN:-}
+if [ -z $NOCLEAN ]; then
+
+    echo "# CLEANING"
+
+    if [ -f Vagrantfile ]; then
+        vagrant destroy -f
+        rm -rf .vagrant
+        rm -f Vagrantfile
+    fi
+    vagrant init geerlingguy/$TARGET
+    vagrant up
+    vagrant ssh-config > ssh.config
+
+    COMMAND="sudo yum -y install git vim-enhanced ansible python-pip python-nose python-mock python-coverage"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+    COMMAND="sudo rpm -e --nodeps ansible"
+    ssh -F ssh.config -tt default "$COMMAND"
+
+else
+    echo "# NOT CLEANING"
+fi    
+
+#
+# Make sure it's running ...
+#
+
+vagrant up
+
+#
+# Grab the ssh config and use it for direct ssh commands
+#
+if [ ! -f ssh.config ]; then
+    vagrant ssh-config > ssh.config
+fi    
+ssh -F ssh.config default 'whoami'
+RC=$?
+if [[ $RC != 0 ]]; then
+    exit $RC
+fi
+
+
+case $TEST_TYPE in
+    unit)
+        echo "# Running unit tests ..."
+        COMMAND="cd /vagrant/ansible ; source hacking/env-setup"
+        COMMAND="$COMMAND; make tests"
+        ;;
+    integration)
+        echo "# Running unit tests ..."
+        COMMAND="cd /vagrant/ansible ; source hacking/env-setup"
+        COMMAND="$COMMAND; export TEST_FLAGS='${TEST_FLAGS:-''}'"
+        COMMAND="$COMMAND; cd test/integration"
+        COMMAND="$COMMAND; LC_ALL=en_US.utf-8 make ${MAKE_TARGET:-}"
+        ;;
+    *)
+        echo "unknown target, choices are unit or integration"
+        exit 1
+        ;;
+esac
+
+echo $COMMAND
+ssh -F ssh.config -tt default "$COMMAND"

@@ -1,12 +1,16 @@
 #!/bin/bash
 
-#set -e
-#set -u
-#set -x
+#   ansible-vagrant-test
+#
+#   DESCRIPTION:
+#   A wrapper around vagrant and and ansible tests. 
+#
+#   USECASES:
+#   * "Localized" testing of an ansible checkout inside a VM
+#   * ansible unit or integration ([non]-destructive) tests
 
 TEST_TYPE=$1  # unit or integration
 CWD=$(pwd)
-
 
 function USAGE() {
     THIS=$(basename "$0")

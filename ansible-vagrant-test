@@ -8,7 +8,7 @@ TEST_TYPE=$1  # unit or integration
 CWD=$(pwd)
 
 
-if [[ $TEST_TYPE == "help" ]]; then
+function USAGE() {
     THIS=$(basename "$0")
     echo ""
     echo "Usage: TARGET=centos7 $THIS <test_type>"
@@ -27,6 +27,18 @@ if [[ $TEST_TYPE == "help" ]]; then
     echo "  * vagrant and virtualbox must be installed and functional for your user"
     echo ""
     exit 0
+}
+
+if [[ $TEST_TYPE == "help" ]]; then
+    USAGE
+fi
+
+if [ ! -d ansible ] && [ ! -L ansible ]; then
+    echo ""
+    echo "ERROR: Missing an 'ansible' directory"
+    echo ""
+    exit 1
+    #USAGE
 fi
 
 #

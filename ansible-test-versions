@@ -25,6 +25,7 @@ for VERSION in $VERSIONS; do
     RC=$?
     RESULTS="$RESULTS;$VERSION:$RC"
 
+    echo ""
     echo "## RC: $RC"
     echo ""
 done

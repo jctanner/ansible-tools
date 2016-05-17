@@ -18,6 +18,7 @@ cd $TICKETDIR
 INVENTORYFILE=inventory
 if [ ! -f $INVENTORYFILE ]; then
     echo "el6host ansible_ssh_host=10.0.0.106" > inventory
+    echo "u1404 ansible_ssh_host=10.0.0.144" >> inventory
 fi
 
 #########################################
@@ -68,3 +69,4 @@ for VERSION in \$VERSIONS; do
     echo "\$VERSION | \$STATERC"
 done
 EOF
+echo $TICKETDIR

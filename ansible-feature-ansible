@@ -33,8 +33,14 @@ fi
 echo "Checking out core modules"
 cd $TOPDIR/ansible/lib/ansible/modules/core
 git clone git@github.com:$GITHUBUSER/ansible-modules-core .
+git remote add upstream https://github.com/ansible/ansible-modules-core
+git fetch upstream
+git merge upstream/devel
 
 # get extras
 echo "Checking out extras modules"
 cd $TOPDIR/ansible/lib/ansible/modules/extras
 git clone git@github.com:$GITHUBUSER/ansible-modules-extras .
+git remote add upstream https://github.com/ansible/ansible-modules-extras
+git fetch upstream
+git merge upstream/devel

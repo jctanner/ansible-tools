@@ -17,11 +17,21 @@ if [ -d $SCRATCH ]; then
 fi
 mkdir -p $SCRATCH
 
+# Where is test-module ?
+which test-module
+RC=$?
+if [[ $RC != 0 ]]; then
+    TEST_MODULE=$(which ansible | xargs dirname | xargs dirname)
+    TEST_MODULE="$TEST_MODULE/hacking/test-module"
+else
+    TEST_MODULE=$(which test-module)    
+fi
+
 # Render/Join/Zip the module
 echo "#####################################"
 echo "#  Calling test-module ..." 
 echo "#####################################"
-test-module -o $SCRATCH/zipped_module.py -n $@
+$TEST_MODULE -o $SCRATCH/zipped_module.py -n $@
 echo "Done."
 
 cd $SCRATCH

@@ -70,3 +70,4 @@ for VERSION in \$VERSIONS; do
 done
 EOF
 echo $TICKETDIR
+echo $TICKETDIR > /tmp/ansible.workon

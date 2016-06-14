@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# [jtanner@fedmac ansible]$ docker ps -a
+# CONTAINER ID        IMAGE                        COMMAND             CREATED             STATUS              PORTS               NAMES
+# 0bce9448e075        ansible/ansible:ubuntu1404   "/sbin/init"        18 minutes ago      Up 18 minutes                           testAbull_10963_TIOsY9CH
+# 667863ca3814        ansible/ansible:ubuntu1404   "/sbin/init"        40 minutes ago      Up 40 minutes                           testAbull_26726_Bq3HkngU
+# 64d8501de377        ansible/ansible:ubuntu1204   "/sbin/init"        27 hours ago        Up 27 hours                             testAbull_25962_SxiX8mXz
+# d7d3b769027b        ansible/ansible:ubuntu1204   "/sbin/init"        36 hours ago        Up 36 hours                             testAbull_6180_o7Sk5HXL
+# 228a9cd52385        ansible/ansible:ubuntu1404   "/sbin/init"        38 hours ago        Up 38 hours                             testAbull_22777_SJeUJ0cy
+# 81408b76e6ff        ansible/ansible:ubuntu1404   "/sbin/init"        40 hours ago        Up 40 hours                             testAbull_6840_VQjqIvuA
+# 9a02197e749e        sivel/httptester             "/services.sh"      2 days ago          Up 2 days           80/tcp, 443/tcp     httptester
+
+
+CONTAINERS=$(docker ps -a | fgrep -e 'ansible/ansible' -e 'sivel/httptester' | egrep -v ^CONTAINER | awk '{print $1}')
+
+for CONTAINER in $CONTAINERS; do
+    echo $CONTAINER
+    docker kill $CONTAINER
+    docker rm $CONTAINER
+done
+

@@ -9,8 +9,11 @@ VERSIONS=$(ansible-list-versions)
 BASEDIR=/tmp
 
 RESULTS=""
+LOGFILE="returncodes.txt"
+rm -f $LOGFILE
 
 for VERSION in $VERSIONS; do
+    (
     echo "###################################"
     echo $VERSION
     echo "###################################"
@@ -23,14 +26,11 @@ for VERSION in $VERSIONS; do
 
     bash $TESTSCRIPT
     RC=$?
-    RESULTS="$RESULTS;$VERSION:$RC"
 
     echo ""
-    echo "## RC: $RC"
+    echo "$VERSION ; $RC" >> $LOGFILE
     echo ""
+    )
 done
 
-IFS=';'
-for RES in $RESULTS; do
-    echo $RES
-done
+cat $LOGFILE

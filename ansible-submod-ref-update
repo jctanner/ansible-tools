@@ -1,0 +1,23 @@
+#!/bin/bash
+
+
+tkuratomi [9:52 AM]  
+jtanner16: cd lib/ansible/modules
+
+[9:52]  
+jtanner16: cd core ; git checkout $BRANCHNAME ;  git pull --rebase
+
+[9:53]  
+jtanner16: cd ../extras git checkout $BRANCHNAME ; git pull --rebase
+
+jtanner16 [9:53 AM]  
+is that assuming a recursive checkout of ansible/ansible ?
+
+tkuratomi [9:53 AM]  
+jtanner16: cd ../ ; git commit core extras -m 'Update submodule refs'
+
+[9:53]  
+jtanner16:  git push
+
+[9:54]  
+jtanner16: It assumes that you have the submodules checked out in that tree.  You don't have to have used the --recursive argument to have achieved that, though.

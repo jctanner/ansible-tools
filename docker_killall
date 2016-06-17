@@ -13,3 +13,4 @@ for ID in $IDS; do
     docker kill $ID
     docker rm $ID
 done
+rm -f /tmp/cid_httptester

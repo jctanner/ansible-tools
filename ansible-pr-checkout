@@ -11,9 +11,9 @@ TICKETID=$(echo $DIRPATH | cut -d\- -f2)
 echo $REPO
 echo $TICKETID
 
-if [ ! -d ansible.ansible ]; then
-    git clone https://github.com/ansible/ansible --recursive ansible.ansible 
-fi    
+#if [ ! -d ansible.ansible ]; then
+#    git clone https://github.com/ansible/ansible --recursive ansible.ansible 
+#fi    
 #if [ ! -d ansible.ansible-modules-core ]; then
 #    git clone https://github.com/ansible/ansible-modules-core.git ansible.ansible-modules-core
 #fi
@@ -25,6 +25,7 @@ fi
 case $REPO in
     "AP")
         echo "ANSIBLE PROJECT PR #$TICKETID"
+        git clone https://github.com/ansible/ansible --recursive ansible.ansible 
         cd $CWD/ansible.ansible
         git fetch origin pull/$TICKETID/head:TEST_$TICKETID
         git checkout TEST_$TICKETID
@@ -32,13 +33,16 @@ case $REPO in
         ;;
     "AMC")
         echo "ANSIBLE MODULES CORE PR #$TICKETID"
-        cd $CWD/ansible.ansible-modules-core
+        git clone https://github.com/ansible/ansible --recursive ansible.ansible 
+        cd $CWD/ansible.ansible/lib/ansible/modules/core
         git fetch origin pull/$TICKETID/head:TEST_$TICKETID
+        cd $CWD/ansible.ansible/lib/ansible/modules/extras
         cd $CWD
         ;;
     "AME")
         echo "ANSIBLE MODULES EXTRAS PR #$TICKETID"
-        cd $CWD/ansible.ansible-modules-extras
+        git clone https://github.com/ansible/ansible --recursive ansible.ansible 
+        cd $CWD/ansible.ansible/lib/ansible/modules/extras
         git fetch origin pull/$TICKETID/head:TEST_$TICKETID
         cd $CWD
         ;;    
@@ -58,4 +62,4 @@ esac
 #    ln -s ../../../../ansible.ansible-modules-extras extras
 #fi
 
-echo $REPO
+#echo $REPO

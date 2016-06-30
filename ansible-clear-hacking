@@ -12,8 +12,10 @@ unset ANSIBLE_LIBRARY
 NEWPATH=""
 for P in $(echo $PATH | tr ':' '\n'); do
     if [[ "$P" != *"/tmp/ansible"* ]] && [[ "$P" != *"/ansible/bin" ]]; then
-        #echo $P
-        NEWPATH="$NEWPATH:$P"
+        if [[ ${NEWPATH} != *":$P:"* ]];then
+            #echo $P
+            NEWPATH="$NEWPATH:$P"
+        fi
     fi
 done
 NEWPATH=$(echo $NEWPATH | sed 's/^\://g')

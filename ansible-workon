@@ -18,6 +18,7 @@ cd $TICKETDIR
 INVENTORYFILE=inventory
 if [ ! -f $INVENTORYFILE ]; then
     echo "el6host ansible_ssh_host=10.0.0.106" > inventory
+    echo "el7host ansible_ssh_host=10.0.0.107" >> inventory
     echo "u1404 ansible_ssh_host=10.0.0.144" >> inventory
 fi
 

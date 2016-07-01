@@ -23,6 +23,38 @@ if [ ! -f $INVENTORYFILE ]; then
 fi
 
 #########################################
+#   INVENTORY SCRIPT
+#########################################
+
+cat << EOF > inventory.py
+#!/usr/bin/env python
+
+import json
+import sys
+from pprint import pprint
+
+INV = {}
+INV['_meta'] = {'hostvars': {}}
+
+groups = ['one', 'two', 'three']
+hosts = ['foo', 'bar', 'baz']
+
+for idx, group in enumerate(groups):
+    INV[group] = {}
+    INV[group]['children'] = []
+    INV[group]['vars'] = {}
+    INV[group]['hosts'] = [hosts[idx]]
+
+for host in hosts:
+    INV['_meta']['hostvars'][host] = {}
+    INV['_meta']['hostvars'][host]['ansible_connection'] = 'local'
+
+print json.dumps(INV, indent=2)
+EOF
+chmod +x inventory.py
+
+
+#########################################
 #   PLAYBOOK 
 #########################################
 

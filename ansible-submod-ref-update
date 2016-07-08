@@ -1,23 +1,35 @@
 #!/bin/bash
 
 
-tkuratomi [9:52 AM]  
-jtanner16: cd lib/ansible/modules
+#tkuratomi [9:52 AM]  
+#jtanner16: cd lib/ansible/modules
+#[9:52]  
+#jtanner16: cd core ; git checkout $BRANCHNAME ;  git pull --rebase
+#[9:53]  
+#jtanner16: cd ../extras git checkout $BRANCHNAME ; git pull --rebase
+#jtanner16 [9:53 AM]  
+#is that assuming a recursive checkout of ansible/ansible ?
+#tkuratomi [9:53 AM]  
+#jtanner16: cd ../ ; git commit core extras -m 'Update submodule refs'
+#[9:53]  
+#jtanner16:  git push
+#[9:54]  
+#jtanner16: It assumes that you have the submodules checked out in that tree.  You don't have to have used the --recursive argument to have achieved that, though.
 
-[9:52]  
-jtanner16: cd core ; git checkout $BRANCHNAME ;  git pull --rebase
+CWD=$(pwd)
+if [ ! -d lib/ansible/modules ]; then
+    echo "You need to be in a recursive ansible checkout"
+    exit 1
+fi
 
-[9:53]  
-jtanner16: cd ../extras git checkout $BRANCHNAME ; git pull --rebase
+MODULE_DIRS="core extras"
+for MP in $MODULE_DIRS; do
+    echo $MP
+    cd $CWD/lib/ansible/modules/$MP
+    git checkout devel
+    git pull --rebase
+done
 
-jtanner16 [9:53 AM]  
-is that assuming a recursive checkout of ansible/ansible ?
+cd $CWD/lib/ansible/modules
+git commit core extras -m "Update submodule refs"
 
-tkuratomi [9:53 AM]  
-jtanner16: cd ../ ; git commit core extras -m 'Update submodule refs'
-
-[9:53]  
-jtanner16:  git push
-
-[9:54]  
-jtanner16: It assumes that you have the submodules checked out in that tree.  You don't have to have used the --recursive argument to have achieved that, though.

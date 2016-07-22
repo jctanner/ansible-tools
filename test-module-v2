@@ -27,11 +27,29 @@ else
     TEST_MODULE=$(which test-module)    
 fi
 
+
+ARGS=( "$@" )
+MODULE_FILE=$2
+
+if [ ! -f $MODULE_FILE ]; then
+
+    # check the ansible modules dir for the file
+    ANSIBLE_DIR=$(which ansible | xargs dirname | xargs dirname)
+    MODULE_DIR="$ANSIBLE_DIR/lib/ansible/modules"    
+    echo "MODULE_DIR: $MODULE_DIR"
+    FOUND_FILE=$(find -L $MODULE_DIR -type f -name "$MODULE_FILE")
+    echo "FOUND FILE: $FOUND_FILE"
+    ARGS[1]=$FOUND_FILE
+fi
+
+echo "MODULE_FILE: ${ARGS[2]}"
+echo "ARGS: ${ARGS[@]}"
+
 # Render/Join/Zip the module
 echo "#####################################"
 echo "#  Calling test-module ..." 
 echo "#####################################"
-$TEST_MODULE -o $SCRATCH/zipped_module.py -n $@
+$TEST_MODULE -o $SCRATCH/zipped_module.py -n ${ARGS[@]}
 echo "Done."
 
 cd $SCRATCH

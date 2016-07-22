@@ -2,8 +2,12 @@
 
 CWD=$(pwd)
 VERSIONS=$(ansible-list-versions)
-CACHEDIR=/tmp/ansible.checkout.clean
-BASEDIR=/tmp
+CACHEDIR=/var/cache/ansible/ansible.checkout.clean
+BASEDIR=/var/cache/ansible/version_checkouts
+
+if [ ! -d $BASEDIR ]; then
+    mkdir -p $BASEDIR
+fi
 
 for VERSION in $VERSIONS; do
     echo $VERSION

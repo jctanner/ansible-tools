@@ -6,7 +6,7 @@ ansible-checkout-versions
 
 CWD=$(pwd)
 VERSIONS=$(ansible-list-versions)
-BASEDIR=/tmp
+BASEDIR=/var/cache/ansible/version_checkouts
 
 RESULTS=""
 LOGFILE="returncodes.txt"

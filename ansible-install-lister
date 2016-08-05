@@ -71,7 +71,6 @@ class AnsibleInstallLister(object):
         for ppath in self.python_paths:
             for SITE_SCRIPT in SITE_SCRIPTS:
                 cmd = ppath + ' -c %s' % SITE_SCRIPT
-                print cmd
                 (rc, so, se) = run_command(cmd)
                 if rc != 0:
                     continue

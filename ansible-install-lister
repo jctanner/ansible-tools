@@ -94,7 +94,6 @@ class AnsibleInstallLister(object):
     def get_ansible_homedirs(self):
         home_dirs = []
         for ap in self.ansible_paths:
-            print ap
             shebang = self.read_file_lines(ap)
             if not shebang:
                 continue
@@ -108,7 +107,6 @@ class AnsibleInstallLister(object):
                 
             if script:            
                 output = self.run_script(script)
-                print output
                 if not output:
                     continue
                 output = output.strip()
@@ -140,10 +138,11 @@ class AnsibleInstallLister(object):
         fo, fn = tempfile.mkstemp()
         with open(fn, 'wb') as f:
             f.write(script)
+        os.close(fo)
         st = os.stat(fn)
         os.chmod(fn, st.st_mode | stat.S_IEXEC)        
         (rc, so, se) = run_command(fn)
-        #os.remove(fn)
+        os.remove(fn)
         return str(so) + str(se)
 
     def read_file_lines(self, filename, lines=1):

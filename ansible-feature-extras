@@ -24,7 +24,7 @@ cd $TOPDIR/ansible/lib/ansible/modules/extras
 git clone git@github.com:$GITHUBUSER/ansible-modules-extras .
 
 # add upstream
-git remote add upstream https://github.com/ansible/ansible-modules-core.git
+git remote add upstream https://github.com/ansible/ansible-modules-extras
 git fetch upstream
 git merge upstream/devel
 

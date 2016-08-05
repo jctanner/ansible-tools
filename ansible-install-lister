@@ -9,10 +9,10 @@ from pprint import pprint
 
 SITE_SCRIPTS = [
     '''"import site; print(';'.join(site.getsitepackages()))"''',
-    '''"import distutils.sysconfig; print distutils.sysconfig.get_python_lib()"'''
+    '''"import distutils.sysconfig; print(distutils.sysconfig.get_python_lib())"'''
     ]
 
-ANSIBLE_HOME_SCRIPT = '''import ansible; print ansible.__file__'''
+ANSIBLE_HOME_SCRIPT = '''import ansible; print(ansible.__file__)'''
 
 def run_command(args):
     p = subprocess.Popen(args, 
@@ -26,17 +26,17 @@ def run_command(args):
 class AnsibleInstallLister(object):
     def __init__(self):
         self.paths = self.get_paths()
-        self.python_paths = self.get_python_paths()
-        self.site_packages_paths = self.get_site_packages_paths()
-        self.ansible_paths = self.get_ansible_paths()
-        self.ansible_homedirs = self.get_ansible_homedirs()
-        self.ansible_moduledirs = self.get_ansible_moduledirs()
         pprint(self.paths)
+        self.python_paths = self.get_python_paths()
         pprint(self.python_paths)
+        self.site_packages_paths = self.get_site_packages_paths()
         pprint(self.site_packages_paths)
+        self.ansible_paths = self.get_ansible_paths()
         pprint(self.ansible_paths)
+        self.ansible_homedirs = self.get_ansible_homedirs()
         pprint(self.ansible_homedirs)
-        import epdb; epdb.st()
+        self.ansible_moduledirs = self.get_ansible_moduledirs()
+        #import epdb; epdb.st()
 
     def get_paths(self):
         """List user's environment path(s)"""
@@ -50,6 +50,8 @@ class AnsibleInstallLister(object):
     def get_python_paths(self):
         ppaths = []
         for path in self.paths:
+            if not os.path.exists(path):
+                continue
             pfiles = os.listdir(path)
             for pf in pfiles:
                 if 'pythonw' in pf:
@@ -57,6 +59,8 @@ class AnsibleInstallLister(object):
                 if pf.endswith('-config'):
                     continue
                 if pf.endswith('-build'):
+                    continue
+                if '-' in pf:
                     continue
                 if pf.startswith('python'):
                     ppaths.append(os.path.join(path, pf))
@@ -67,6 +71,7 @@ class AnsibleInstallLister(object):
         for ppath in self.python_paths:
             for SITE_SCRIPT in SITE_SCRIPTS:
                 cmd = ppath + ' -c %s' % SITE_SCRIPT
+                print cmd
                 (rc, so, se) = run_command(cmd)
                 if rc != 0:
                     continue

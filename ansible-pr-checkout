@@ -5,8 +5,15 @@ CWD=$(pwd)
 DIRPATH=$(basename $CWD)
 echo $DIRPATH
 
-REPO=$(echo $DIRPATH | cut -d\- -f1)
-TICKETID=$(echo $DIRPATH | cut -d\- -f2)
+REPO=$1
+TICKETID=$2
+
+if [ -z $REPO ]; then
+    REPO=$(echo $DIRPATH | cut -d\- -f1)
+fi
+if [ -z $TICKETID ]; then
+    TICKETID=$(echo $DIRPATH | cut -d\- -f2)
+fi
 
 echo $REPO
 echo $TICKETID

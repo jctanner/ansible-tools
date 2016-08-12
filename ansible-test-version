@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 INVERSION=$1
 TESTSCRIPT=$2
@@ -8,16 +8,23 @@ ansible-checkout-versions
 CWD=$(pwd)
 VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
 BASEDIR=/var/cache/ansible/version_checkouts
+CACHEDIR=/var/cache/ansible/ansible.checkout.clean
 
 (
 echo "###################################"
 echo $VERSION
 echo "###################################"
-VERSIONDIR="$BASEDIR/ansible.$VERSION"
+if [[ $VERSION == "devel"* ]]; then
+    VERSIONDIR="$CACHEDIR"
+else
+    VERSIONDIR="$BASEDIR/ansible.$VERSION"
+fi
 HACKING="$VERSIONDIR/hacking/env-setup"
 if [ -f $HACKING ]; then
-    #source $(which ansible-clear-hacking)
     source $HACKING > /dev/null 2>&1
+else
+    echo "ERROR: env-setup does not exist for $VERSIONDIR"
+    exit 1
 fi
 
 chmod +x $TESTSCRIPT

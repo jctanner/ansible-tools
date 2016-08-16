@@ -14,6 +14,9 @@ CACHEDIR=/var/cache/ansible/ansible.checkout.clean
 echo "###################################"
 echo $VERSION
 echo "###################################"
+
+echo $VERSION > ansible.version
+
 if [[ $VERSION == "devel"* ]]; then
     VERSIONDIR="$CACHEDIR"
 else

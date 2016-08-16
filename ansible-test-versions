@@ -18,6 +18,9 @@ for VERSION in $VERSIONS; do
     echo "###################################"
     echo $VERSION
     echo "###################################"
+
+    echo $VERSION > ansible.version
+
     if [[ $VERSION == "devel"* ]]; then
         VERSIONDIR="$CACHEDIR"
     else

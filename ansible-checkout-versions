@@ -12,33 +12,36 @@ fi
 for VERSION in $VERSIONS; do
     echo $VERSION
 
-    # git checkout tags/<tag_name>
-    CHECKOUTDIR="$BASEDIR/ansible.$VERSION"
-    if [ ! -d $CHECKOUTDIR ]; then
-        cp -Rp $CACHEDIR $CHECKOUTDIR
-        cd $CHECKOUTDIR
+    if [[ $VERSION != "devel"* ]]; then
 
-        # submodules start at v1.8.0
-        if [[ $VERSION < v1.8.0 ]]; then
-            echo "## deleting submodules ..."
-            rm -rf rm -rf lib/ansible/modules/*
-        fi
-        
-        echo "## checking out tag ..."
-        git checkout tags/$VERSION
-        RC=$?
-        if [[ $RC != 0 ]]; then
-            exit $RC
-        fi
+        # git checkout tags/<tag_name>
+        CHECKOUTDIR="$BASEDIR/ansible.$VERSION"
+        if [ ! -d $CHECKOUTDIR ]; then
+            cp -Rp $CACHEDIR $CHECKOUTDIR
+            cd $CHECKOUTDIR
 
-        if [[ $VERSION > v1.7.2 ]]; then
-            echo "## updating submodules ..."
-            git submodule update
+            # submodules start at v1.8.0
+            if [[ $VERSION < v1.8.0 ]]; then
+                echo "## deleting submodules ..."
+                rm -rf rm -rf lib/ansible/modules/*
+            fi
+            
+            echo "## checking out tag ..."
+            git checkout tags/$VERSION
             RC=$?
             if [[ $RC != 0 ]]; then
                 exit $RC
             fi
-        fi            
-    fi
+
+            if [[ $VERSION > v1.7.2 ]]; then
+                echo "## updating submodules ..."
+                git submodule update
+                RC=$?
+                if [[ $RC != 0 ]]; then
+                    exit $RC
+                fi
+            fi            
+        fi
+    fi 
     cd $CWD
 done

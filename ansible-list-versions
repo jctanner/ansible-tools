@@ -8,6 +8,7 @@ if [ ! -d $CACHEDIR ]; then
 else
     cd $CACHEDIR
     git pull --recurse-submodules >/dev/null 2>&1
+    git submodule update --recursive >/dev/null 2>&1
 fi
 
 cd $CACHEDIR

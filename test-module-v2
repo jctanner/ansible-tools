@@ -65,10 +65,10 @@ echo "Done."
 echo "#####################################"
 echo "#  Extracting parameter args ..." 
 echo "#####################################"
-JSONARGS=$(fgrep -m1 ZIPLOADER_PARAMS zipped_module.py | sed -e 's/^[[:space:]]*//')
+JSONARGS=$(fgrep -m1 ANSIBALLZ_PARAMS zipped_module.py | sed -e 's/^[[:space:]]*//')
 if [ ! -z "$JSONARGS" ]; then 
     #echo $JSONARGS
-    python -c "import os; import json; $JSONARGS; ARGS=json.loads(ZIPLOADER_PARAMS); print ARGS; open('args.json', 'wb').write(json.dumps(ARGS, indent=2))"
+    python -c "import os; import json; $JSONARGS; ARGS=json.loads(ANSIBALLZ_PARAMS); print ARGS; open('args.json', 'wb').write(json.dumps(ARGS, indent=2))"
     echo "Done."
 
     # Overwrite _load_params to not use stdin (thereby allowing pdb to function)
@@ -92,8 +92,10 @@ echo "#####################################"
 mkdir strace.out
 #strace -fftttvo strace.out/test python ansible_module_*.py
 if [ ! -d debug_dir ]; then
+    echo "# python ansible_module_*.py"
     python ansible_module_*.py
 else
+    echo "# cd debug_dir ; ln -s ../args.json args.json; python ansible_module_*.py"
     cd debug_dir
     ln -s ../args.json args.json
     python ansible_module_*.py

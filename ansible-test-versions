@@ -22,12 +22,13 @@ def run_command(args, capture=False, shell=True):
 
 def test_version(version, params):
     '''Run a test script through hacking'''
-    if version.startswith('v.'):
+    if version.startswith('v'):
         version_dir = os.path.join(BASEDIR, 'ansible.%s' % version)
     else:
         version_dir = DEVELDIR
     hacking_script = os.path.join(version_dir, 'hacking', 'env-setup')
     command = 'source %s >/dev/null 2>&1 ; bash %s' % (hacking_script, params)
+    #command = 'source %s >/dev/null 2>&1 ; ansible --version' % (hacking_script)
     (rc, so, se) = run_command(command, capture=False)
     return rc
 

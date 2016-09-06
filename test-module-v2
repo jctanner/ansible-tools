@@ -92,12 +92,13 @@ echo "#####################################"
 mkdir strace.out
 #strace -fftttvo strace.out/test python ansible_module_*.py
 if [ ! -d debug_dir ]; then
-    echo "# python ansible_module_*.py"
+    echo "# $(which python) ansible_module_*.py"
     python ansible_module_*.py
 else
     echo "# cd debug_dir ; ln -s ../args.json args.json; python ansible_module_*.py"
     cd debug_dir
     ln -s ../args.json args.json
+    echo "# $(which python) ansible_module_*.py"
     python ansible_module_*.py
 fi
 echo "Done."

@@ -156,36 +156,57 @@ class VarTestMaker(object):
             self.inventory += 'findme=ini_all\n'
             self.inventory += '\n'
 
-        invfile = os.path.join(TESTDIR, 'inventory')
+        # default to a single file called inventory
+        invfile = os.path.join(TESTDIR, 'inventory', 'hosts')
+        ipath = os.path.join(TESTDIR, 'inventory')
+        if not os.path.isdir(ipath):
+            os.makedirs(ipath)
+
+        if 'ini_host_vars_file' in self.features:
+            hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
+            if not os.path.isdir(hpath):
+                os.makedirs(hpath)
+            hfile = os.path.join(hpath, 'testhost')
+            with open(hfile, 'wb') as f:
+                f.write('findme: ini_host_vars_file\n')
+
+        if 'ini_group_vars_file' in self.features:
+            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+            if not os.path.isdir(gpath):
+                os.makedirs(gpath)
+            gfile = os.path.join(gpath, 'all')
+            with open(hfile, 'wb') as f:
+                f.write('findme: ini_group_vars_file\n')
+
         with open(invfile, 'wb') as f:
             f.write(self.inventory)
 
-        if 'host_vars_file' in self.features:
+        if 'pb_host_vars_file' in self.features:
             os.makedirs(os.path.join(TESTDIR, 'host_vars'))
             fname = os.path.join(TESTDIR, 'host_vars', 'testhost')
             with open(fname, 'wb') as f:
-                f.write('findme: host_vars_file\n')
+                f.write('findme: pb_host_vars_file\n')
 
-        if 'group_vars_file_parent' in self.features:
+        if 'pb_group_vars_file_parent' in self.features:
             if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
                 os.makedirs(os.path.join(TESTDIR, 'group_vars'))
             fname = os.path.join(TESTDIR, 'group_vars', 'parent')
             with open(fname, 'wb') as f:
-                f.write('findme: group_vars_file_parent\n')
+                f.write('findme: pb_group_vars_file_parent\n')
 
-        if 'group_vars_file_child' in self.features:
+        if 'pb_group_vars_file_child' in self.features:
             if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
                 os.makedirs(os.path.join(TESTDIR, 'group_vars'))
             fname = os.path.join(TESTDIR, 'group_vars', 'child')
             with open(fname, 'wb') as f:
-                f.write('findme: group_vars_file_child\n')
+                f.write('findme: pb_group_vars_file_child\n')
 
-        if 'group_vars_file_all' in self.features:
+        if 'pb_group_vars_file_all' in self.features:
             if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
                 os.makedirs(os.path.join(TESTDIR, 'group_vars'))
             fname = os.path.join(TESTDIR, 'group_vars', 'all')
             with open(fname, 'wb') as f:
-                f.write('findme: group_vars_file_all\n')
+                f.write('findme: pb_group_vars_file_all\n')
 
         if 'play_var' in self.features:
             self.playvars.append('findme: play_var')
@@ -263,10 +284,12 @@ def main():
                 'ini_child', 
                 'ini_parent',
                 'ini_all',
-                'group_vars_file_parent', 
-                'group_vars_file_child',
-                'group_vars_file_all',
-                'host_vars_file',
+                'ini_host_vars_file',
+                'ini_group_vars_file',
+                'pb_group_vars_file_parent', 
+                'pb_group_vars_file_child',
+                'pb_group_vars_file_all',
+                'pb_host_vars_file',
                 'play_var',
                 'role_parent_default',
                 'role_default',

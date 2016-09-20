@@ -24,6 +24,8 @@
 #    19. role_parent_default
 #    20. role_default
 
+# https://github.com/ansible/ansible/blob/devel/test/integration/test_var_precedence.yml
+
 import os
 import sys
 import shutil

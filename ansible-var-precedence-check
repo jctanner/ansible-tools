@@ -26,6 +26,28 @@
 
 # https://github.com/ansible/ansible/blob/devel/test/integration/test_var_precedence.yml
 
+# bcoca's version ...
+#    1. extra_vars
+#    2. set_fact
+#    3. include_vars
+#    4. role_vars
+#    5. vars_file
+#    6. play_var
+#    7. pb_host_vars_file
+#    13. pb_group_vars_file_child
+#    14. pb_group_vars_file_parent
+#    11. ini_host_vars_file
+#    9. ini_group_vars_file_child
+#    8. ini_group_vars_file_parent
+#    12. ini_host
+#    15. ini_child
+#    16. ini_parent
+#    18. pb_group_vars_file_all
+#    10. ini_group_vars_file_all
+#    17. ini_all
+#    19. role_parent_default
+#    20. role_default
+
 import os
 import sys
 import shutil

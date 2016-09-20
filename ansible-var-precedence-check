@@ -1,0 +1,226 @@
+#!/usr/bin/env python2
+
+import os
+import sys
+import shutil
+import subprocess
+import tempfile
+from pprint import pprint
+
+TESTDIR = tempfile.mkdtemp()
+
+def run_command(args, cwd=None):
+    p = subprocess.Popen(
+            args, 
+            stderr=subprocess.PIPE, 
+            stdout=subprocess.PIPE, 
+            shell=True,
+            cwd=cwd
+        )
+    (so, se) = p.communicate()
+    return (p.returncode, so, se)
+
+def clean_test_dir():
+    if os.path.isdir(TESTDIR):
+        shutil.rmtree(TESTDIR)
+    os.makedirs(TESTDIR)
+
+class Role(object):
+    def __init__(self, name):
+        self.name = name
+        self.load = True
+        self.dependencies = []
+        self.defaults = []
+        self.tasks = []
+
+    def write_role(self):
+        # roles/x/defaults/main.yml
+        fpath = os.path.join(TESTDIR, 'roles', self.name, 'defaults')
+        if not os.path.isdir(fpath):
+            os.makedirs(fpath)
+        fname = os.path.join(fpath, 'main.yml')
+        with open(fname, 'wb') as f:
+            f.write('findme: %s\n' % self.name)
+
+        if self.dependencies:
+            fpath = os.path.join(TESTDIR, 'roles', self.name, 'meta') 
+            if not os.path.isdir(fpath):
+                os.makedirs(fpath)
+            fname = os.path.join(fpath, 'main.yml')
+            with open(fname, 'wb') as f:
+                f.write('dependencies:\n')
+                for dep in self.dependencies:
+                    f.write('- { role: %s }\n' % dep)                    
+            #import epdb; epdb.st()
+
+class VarTestMaker(object):
+    def __init__(self, features):
+        clean_test_dir()
+        self.features = features
+        self.inventory = ''
+        self.playvars = []
+        self.playbook =  '- hosts: testhost\n'
+        self.playbook += '  gather_facts: False\n'
+        self.tasks = []
+        self.roles = []
+
+    def write_playbook(self):
+        fname = os.path.join(TESTDIR, 'site.yml')
+        with open(fname, 'wb') as f:
+            f.write(self.playbook)
+            if self.playvars:
+                f.write('  vars:\n')
+                for pv in self.playvars:
+                    f.write('    %s\n' % pv)
+            if self.roles:
+                f.write(    '  roles:\n')
+                for role in self.roles:
+                    role.write_role()
+                    if role.load:
+                        f.write('    - %s\n' % role.name)
+            if self.tasks:
+                f.write(    '  tasks:\n')
+                for task in self.tasks:
+                    f.write('    - %s\n' % task)
+
+    def run(self):
+
+        if 'ini_host' in self.features:
+            self.inventory += 'testhost findme=ini_host\n'            
+        else:
+            self.inventory += 'testhost\n'            
+        self.inventory += '\n'
+
+        if 'ini_child' in self.features:
+            self.inventory += '[child]\n'
+            self.inventory += 'testhost\n' 
+            self.inventory += '\n'
+            self.inventory += '[child:vars]\n'
+            self.inventory += 'findme=ini_child\n'
+            self.inventory += '\n'
+
+        if 'ini_parent' in self.features:
+            if 'ini_child' in self.features:
+                self.inventory += '[parent:children]\n'
+                self.inventory += 'child\n'
+            else:
+                self.inventory += '[parent]\n'
+                self.inventory += 'testhost\n'
+            self.inventory += '\n'
+            self.inventory += '[parent:vars]\n'
+            self.inventory += 'findme=ini_parent\n'
+            self.inventory += '\n'
+
+        if 'ini_all' in self.features:
+            self.inventory += '[all:vars]\n'
+            self.inventory += 'findme=ini_all\n'
+            self.inventory += '\n'
+
+        invfile = os.path.join(TESTDIR, 'inventory')
+        with open(invfile, 'wb') as f:
+            f.write(self.inventory)
+
+        if 'host_vars_file' in self.features:
+            os.makedirs(os.path.join(TESTDIR, 'host_vars'))
+            fname = os.path.join(TESTDIR, 'host_vars', 'testhost')
+            with open(fname, 'wb') as f:
+                f.write('findme: host_vars_file\n')
+
+        if 'group_vars_file_parent' in self.features:
+            if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
+                os.makedirs(os.path.join(TESTDIR, 'group_vars'))
+            fname = os.path.join(TESTDIR, 'group_vars', 'parent')
+            with open(fname, 'wb') as f:
+                f.write('findme: group_vars_file_parent\n')
+
+        if 'group_vars_file_child' in self.features:
+            if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
+                os.makedirs(os.path.join(TESTDIR, 'group_vars'))
+            fname = os.path.join(TESTDIR, 'group_vars', 'child')
+            with open(fname, 'wb') as f:
+                f.write('findme: group_vars_file_child\n')
+
+        if 'group_vars_file_all' in self.features:
+            if not os.path.isdir(os.path.join(TESTDIR, 'group_vars')):
+                os.makedirs(os.path.join(TESTDIR, 'group_vars'))
+            fname = os.path.join(TESTDIR, 'group_vars', 'all')
+            with open(fname, 'wb') as f:
+                f.write('findme: group_vars_file_all\n')
+
+        if 'play_var' in self.features:
+            self.playvars.append('findme: play_var')
+
+        if 'set_fact' in self.features:
+            self.tasks.append('set_fact: findme="set_fact"')
+
+        if 'include_vars' in self.features:
+            self.tasks.append('include_vars: included.yml')
+            fname = os.path.join(TESTDIR, 'included.yml')
+            with open(fname, 'wb') as f:
+                f.write('findme: include_vars')
+
+        if 'role_default' in self.features:
+            role = Role('role_default')
+            self.roles.append(role)
+
+        if 'role_parent_default' in self.features:
+            role = Role('role_parent_default')
+            role.dependencies.append('role_default')
+            self.roles[0].load = False
+            self.roles.append(role)
+
+        self.tasks.append('debug: var=findme')
+        self.write_playbook()
+
+        cmd = 'ansible-playbook -c local -i inventory site.yml'
+        if 'extra_vars' in self.features:
+            cmd += ' --extra-vars="findme=extra_vars"'
+        (rc, so, se) = run_command(cmd, cwd=TESTDIR)
+
+        if rc == 0:
+            val = None
+            try:
+                idx = so.rfind('findme')
+                val = so[idx:]
+                val = val.split('"')[2]
+            except Exception as e:
+                print(e)
+                import epdb; epdb.st()
+            return val
+        else:
+            return False
+
+
+def main():
+    results = []
+    features = ['ini_host', 
+                'ini_child', 
+                'ini_parent',
+                'ini_all',
+                'group_vars_file_parent', 
+                'group_vars_file_child',
+                'group_vars_file_all',
+                'host_vars_file',
+                'play_var',
+                'role_parent_default',
+                'role_default',
+                'include_vars',
+                'set_fact',
+                'extra_vars']
+
+    index = 1
+    while features:
+        res = VarTestMaker(features).run()
+        if not res:
+            print("ERROR: %s" % res)
+            sys.exit(1)
+
+        print('%s. %s' % (index, res))
+        features.remove(res)
+        index += 1
+
+    shutil.rmtree(TESTDIR)
+
+if __name__ == "__main__":
+    main()
+

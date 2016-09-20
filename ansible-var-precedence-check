@@ -2,8 +2,7 @@
 
 # A tool to check the order of precedence for ansible variables
 #
-#    $ ansible-var-precedence-check
-#    TOTAL: 18
+#    TOTAL: 20
 #    1. extra_vars
 #    2. set_fact
 #    3. include_vars
@@ -11,17 +10,19 @@
 #    5. vars_file
 #    6. play_var
 #    7. pb_host_vars_file
-#    8. ini_group_vars_file
-#    9. ini_host_vars_file
-#    10. ini_host
-#    11. pb_group_vars_file_child
-#    12. pb_group_vars_file_parent
-#    13. ini_child
-#    14. ini_parent
-#    15. ini_all
-#    16. pb_group_vars_file_all
-#    17. role_parent_default
-#    18. role_default
+#    8. ini_group_vars_file_parent
+#    9. ini_group_vars_file_child
+#    10. ini_group_vars_file_all
+#    11. ini_host_vars_file
+#    12. ini_host
+#    13. pb_group_vars_file_child
+#    14. pb_group_vars_file_parent
+#    15. ini_child
+#    16. ini_parent
+#    17. ini_all
+#    18. pb_group_vars_file_all
+#    19. role_parent_default
+#    20. role_default
 
 import os
 import sys
@@ -174,14 +175,30 @@ class VarTestMaker(object):
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_host_vars_file\n')
-
-        if 'ini_group_vars_file' in self.features:
+        
+        if 'ini_group_vars_file_all' in self.features:
             gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
             if not os.path.isdir(gpath):
                 os.makedirs(gpath)
             gfile = os.path.join(gpath, 'all')
             with open(hfile, 'wb') as f:
-                f.write('findme: ini_group_vars_file\n')
+                f.write('findme: ini_group_vars_file_all\n')
+
+        if 'ini_group_vars_file_child' in self.features:
+            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+            if not os.path.isdir(gpath):
+                os.makedirs(gpath)
+            gfile = os.path.join(gpath, 'child')
+            with open(hfile, 'wb') as f:
+                f.write('findme: ini_group_vars_file_child\n')
+        
+        if 'ini_group_vars_file_parent' in self.features:
+            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+            if not os.path.isdir(gpath):
+                os.makedirs(gpath)
+            gfile = os.path.join(gpath, 'child')
+            with open(hfile, 'wb') as f:
+                f.write('findme: ini_group_vars_file_parent\n')
 
         with open(invfile, 'wb') as f:
             f.write(self.inventory)
@@ -290,7 +307,9 @@ def main():
                 'ini_parent',
                 'ini_all',
                 'ini_host_vars_file',
-                'ini_group_vars_file',
+                'ini_group_vars_file_parent',
+                'ini_group_vars_file_child',
+                'ini_group_vars_file_all',
                 'pb_group_vars_file_parent', 
                 'pb_group_vars_file_child',
                 'pb_group_vars_file_all',

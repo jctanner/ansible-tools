@@ -3,20 +3,25 @@
 # A tool to check the order of precedence for ansible variables
 #
 #    $ ansible-var-precedence-check
+#    TOTAL: 18
 #    1. extra_vars
 #    2. set_fact
 #    3. include_vars
-#    4. play_var
-#    5. host_vars_file
-#    6. ini_host
-#    7. group_vars_file_child
-#    8. group_vars_file_parent
-#    9. ini_child
-#    10. ini_parent
-#    11. ini_all
-#    12. group_vars_file_all
-#    13. role_parent_default
-#    14. role_default
+#    4. role_var
+#    5. vars_file
+#    6. play_var
+#    7. pb_host_vars_file
+#    8. ini_group_vars_file
+#    9. ini_host_vars_file
+#    10. ini_host
+#    11. pb_group_vars_file_child
+#    12. pb_group_vars_file_parent
+#    13. ini_child
+#    14. ini_parent
+#    15. ini_all
+#    16. pb_group_vars_file_all
+#    17. role_parent_default
+#    18. role_default
 
 import os
 import sys

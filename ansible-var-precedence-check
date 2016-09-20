@@ -1,5 +1,23 @@
 #!/usr/bin/env python2
 
+# A tool to check the order of precedence for ansible variables
+#
+#    $ ansible-var-precedence-check
+#    1. extra_vars
+#    2. set_fact
+#    3. include_vars
+#    4. play_var
+#    5. host_vars_file
+#    6. ini_host
+#    7. group_vars_file_child
+#    8. group_vars_file_parent
+#    9. ini_child
+#    10. ini_parent
+#    11. ini_all
+#    12. group_vars_file_all
+#    13. role_parent_default
+#    14. role_default
+
 import os
 import sys
 import shutil

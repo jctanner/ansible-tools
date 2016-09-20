@@ -48,17 +48,33 @@ class Role(object):
         self.name = name
         self.load = True
         self.dependencies = []
-        self.defaults = []
+        self.defaults = False
+        self.vars = False
         self.tasks = []
 
     def write_role(self):
-        # roles/x/defaults/main.yml
-        fpath = os.path.join(TESTDIR, 'roles', self.name, 'defaults')
+
+        fpath = os.path.join(TESTDIR, 'roles', self.name)
         if not os.path.isdir(fpath):
             os.makedirs(fpath)
-        fname = os.path.join(fpath, 'main.yml')
-        with open(fname, 'wb') as f:
-            f.write('findme: %s\n' % self.name)
+
+        if self.defaults:
+            # roles/x/defaults/main.yml
+            fpath = os.path.join(TESTDIR, 'roles', self.name, 'defaults')
+            if not os.path.isdir(fpath):
+                os.makedirs(fpath)
+            fname = os.path.join(fpath, 'main.yml')
+            with open(fname, 'wb') as f:
+                f.write('findme: %s\n' % self.name)
+
+        if self.vars:
+            # roles/x/vars/main.yml
+            fpath = os.path.join(TESTDIR, 'roles', self.name, 'vars')
+            if not os.path.isdir(fpath):
+                os.makedirs(fpath)
+            fname = os.path.join(fpath, 'main.yml')
+            with open(fname, 'wb') as f:
+                f.write('findme: %s\n' % self.name)
 
         if self.dependencies:
             fpath = os.path.join(TESTDIR, 'roles', self.name, 'meta') 
@@ -98,6 +114,7 @@ class VarTestMaker(object):
             if self.roles:
                 f.write(    '  roles:\n')
                 for role in self.roles:
+                    #print("writing %s" % role.name)
                     role.write_role()
                     if role.load:
                         f.write('    - %s\n' % role.name)
@@ -188,15 +205,32 @@ class VarTestMaker(object):
             with open(fname, 'wb') as f:
                 f.write('findme: include_vars\n')
 
-        if 'role_default' in self.features:
-            role = Role('role_default')
+        if 'role_var' in self.features:
+            role = Role('role_var')
+            role.vars = True
+            role.load = True
             self.roles.append(role)
 
         if 'role_parent_default' in self.features:
+            role = Role('role_default')
+            role.load = False
+            role.defaults = True
+            self.roles.append(role)
+
             role = Role('role_parent_default')
             role.dependencies.append('role_default')
-            self.roles[0].load = False
+            role.defaults = True
+            role.load = True
             self.roles.append(role)
+
+        elif 'role_default' in self.features:
+                role = Role('role_default')
+                role.defaults = True
+                role.load = True
+                self.roles.append(role)
+        
+        #print(self.features)
+        #pprint([(x.name,x.load) for x in self.roles])
 
         self.tasks.append('debug: var=findme')
         self.write_playbook()
@@ -217,6 +251,9 @@ class VarTestMaker(object):
                 import epdb; epdb.st()
             return val
         else:
+            print(se)
+            import epdb; epdb.st()
+            sys.exit(1)
             return False
 
 
@@ -233,21 +270,35 @@ def main():
                 'play_var',
                 'role_parent_default',
                 'role_default',
+                'role_var',
                 'include_vars',
                 'set_fact',
                 'vars_file',
                 'extra_vars']
 
+    print("TOTAL: %s" % len(features))
+
+    last_removed = None
     index = 1
     while features:
         res = VarTestMaker(features).run()
-        if not res:
+        if not res or res == 'VARIABLE IS NOT DEFINED!':
             print("ERROR: %s" % res)
             print("tempdir: %s" % TESTDIR)
+            print("last_removed: %s" % last_removed)
+            print("features: %s" % features)
             sys.exit(1)
 
         print('%s. %s' % (index, res))
-        features.remove(res)
+        try:
+            features.remove(res)
+        except Exception as e:
+            print("ERROR !!!")
+            print(e)
+            print('features: %s' % features)
+            print('res: %s' % res)
+            sys.exit(1)
+        last_removed = res
         index += 1
 
     shutil.rmtree(TESTDIR)

@@ -129,58 +129,62 @@ def parse_changelog(dirpath):
 
 def main():
     parser = OptionParser()
-    #parser.add_option("-f", "--file", dest="filename",
-    #                  help="write report to FILE", metavar="FILE")
-    #parser.add_option("-q", "--quiet",
-    #                  action="store_false", dest="verbose", default=True,
-    #                  help="don't print status messages to stdout")
     (options, args) = parser.parse_args()
-    #print options
-    #print args
 
     dirpath = args[0]
-    #print "dirpath: %s" % dirpath
 
+    # Make a list of all current module files
     current_files = list_module_files(dirpath)
 
+    # Make a datastructure representing the modules added in each version
+    # by parsing the current changelog file.
     changelog = parse_changelog(dirpath)
-    ansible_versions = sorted(changelog.keys())
-    ansible_devel_version = ansible_versions[-1]
-    #pprint(ansible_versions)
 
+    # Make a list of ansible versions
+    ansible_versions = sorted(changelog.keys())
+
+    # Mark the last version as the current devel version
+
+    ansible_devel_version = ansible_versions[-1]
+    
+    # Make a list of the commitid for every module file
     file_commits = get_commits_for_files(dirpath)
+
+    # Iterate each module directory (core|extras)
     for k,v in file_commits.iteritems():
-        #print k
+
+        # Iterate through each file in the module directory
         for kfile,commitid in v.iteritems():
+
+            # Skip non-python files
             if not kfile.endswith('.py'):
                 continue
+
+            # join the module dir and the filepath
             fullpath = os.path.join(k, kfile)
+
+            # Make sure it is a directory
             if '.' in os.path.basename(fullpath):
                 fullpath = os.path.dirname(fullpath)
+
             if not os.path.isdir(fullpath) or (os.path.basename(kfile) == '__init__.py'):
                 continue
-            #print kfile,fullpath,commitid
             branches = branches_for_commit(fullpath, commitid)
-            #pprint(branches)
-
 
             # check if commit only in devel and if in changelog
             non_devel_branches = [x for x in branches if not 'origin/devel' in x] 
+
             if len(non_devel_branches) == 0:
-                #pprint(branches)
                 module_name = os.path.basename(kfile).replace('.py', '')
                 inchangelog = False
-                for k,v in changelog[ansible_devel_version]['newmodules'].iteritems():
-                    #print k,v
-                    for vfile in v:
+                for kc,vc in changelog[ansible_devel_version]['newmodules'].iteritems():
+                    for vfile in vc:
                         if vfile == module_name:
                             inchangelog = True
                             break
-                    #import epdb; epdb.st()
 
                 if not inchangelog:
                     print "MODULE (%s) IS NOT IN THE %s CHANGELOG!!!" % (module_name, ansible_devel_version)
-            #import epdb; epdb.st()
 
 
 if __name__ == "__main__":

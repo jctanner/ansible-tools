@@ -3,6 +3,9 @@
 
 #tkuratomi [9:52 AM]  
 #jtanner16: cd lib/ansible/modules
+
+# The repo directories are going to be in a detached head state, this is normal.
+
 #[9:52]  
 #jtanner16: cd core ; git checkout $BRANCHNAME ;  git pull --rebase
 #[9:53]  

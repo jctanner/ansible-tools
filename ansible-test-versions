@@ -57,10 +57,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--usecache', action='store_true', 
                         help='do not pull latest ansible commits')
+    parser.add_argument('--start', help='skip testing versions up to this version')
     parser.add_argument('inputs', nargs='+', help='[version] testscript')
     args = parser.parse_args()
 
     ansible_versions = list_versions(args)
+
+    if args.start:
+        av_tmp = []
+        keep = False
+        for av in ansible_versions:
+            if av.startswith('v' + str(args.start)):
+                keep = True
+            if keep:
+                av_tmp.append(av)
+        ansible_versions = [x for x in av_tmp]
+        #import epdb; epdb.st()
 
     # Test one version or test them all? ...
     test_script = None

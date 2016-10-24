@@ -10,8 +10,8 @@ if [ ! -d $CACHEDIR ]; then
         --recursive $CACHEDIR >/dev/null 2>&1
 else
     if [ -z $USECACHE ]; then
-        git pull --recurse-submodules >/dev/null 2>&1
-        git submodule update --recursive >/dev/null 2>&1
+        cd $CACHEDIR ; git pull --rebase --recurse-submodules >/dev/null 2>&1
+        cd $CACHEDIR ; git submodule update --recursive >/dev/null 2>&1
     fi
 fi
 

@@ -54,6 +54,7 @@ import shutil
 import subprocess
 import tempfile
 from pprint import pprint
+from optparse import OptionParser
 
 TESTDIR = tempfile.mkdtemp()
 
@@ -191,36 +192,33 @@ class VarTestMaker(object):
         ipath = os.path.join(TESTDIR, 'inventory')
         if not os.path.isdir(ipath):
             os.makedirs(ipath)
+        hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
+        if not os.path.isdir(hpath):
+            os.makedirs(hpath)
+        gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+        if not os.path.isdir(gpath):
+            os.makedirs(gpath)
 
         if 'ini_host_vars_file' in self.features:
-            hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
-            if not os.path.isdir(hpath):
-                os.makedirs(hpath)
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_host_vars_file\n')
         
         if 'ini_group_vars_file_all' in self.features:
-            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
-            if not os.path.isdir(gpath):
-                os.makedirs(gpath)
             gfile = os.path.join(gpath, 'all')
+            hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_all\n')
 
         if 'ini_group_vars_file_child' in self.features:
-            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
-            if not os.path.isdir(gpath):
-                os.makedirs(gpath)
             gfile = os.path.join(gpath, 'child')
+            hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_child\n')
         
         if 'ini_group_vars_file_parent' in self.features:
-            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
-            if not os.path.isdir(gpath):
-                os.makedirs(gpath)
             gfile = os.path.join(gpath, 'child')
+            hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_parent\n')
 
@@ -347,7 +345,42 @@ def main():
                 'vars_file',
                 'extra_vars']
 
+    parser = OptionParser()
+    parser.add_option('-f', '--feature', action='append')
+    (options, args) = parser.parse_args()
+
+    if options.feature:
+        for f in options.feature:
+            if f not in features:
+                print('%s is not a valid feature' % f)
+                sys.exit(1)
+        features = [x for x in options.feature]
+
     print("TOTAL: %s" % len(features))
+
+    fdesc = {
+        'ini_host': 'host var inside the ini', 
+        'ini_child': 'child group var inside the ini', 
+        'ini_parent': 'parent group var inside the ini',
+        'ini_all': 'all group var inside the ini',
+        'ini_host_vars_file': 'var in inventory/host_vars/host',
+        'ini_group_vars_file_parent': 'var in inventory/group_vars/parent',
+        'ini_group_vars_file_child': 'var in inventory/group_vars/child',
+        'ini_group_vars_file_all': 'var in inventory/group_vars/all',
+        'pb_group_vars_file_parent': 'var in playbook/group_vars/parent', 
+        'pb_group_vars_file_child': 'var in playbook/group_vars/child',
+        'pb_group_vars_file_all': 'var in playbook/group_vars/all',
+        'pb_host_vars_file': 'var in playbook/host_vars/host',
+        'play_var': 'var set in playbook header',
+        'role_parent_default': 'var in roles/role_parent/vars/defaults',
+        'role_default': 'var in roles/role/vars/defaults',
+        'role_var': 'var in ???',
+        'include_vars': 'var in included file',
+        'set_fact': 'var made by set_fact',
+        'vars_file': 'var in file added by vars_file',
+        'extra_vars': 'var passed via the cli'
+    }
+
 
     last_removed = None
     index = 1
@@ -360,7 +393,7 @@ def main():
             print("features: %s" % features)
             sys.exit(1)
 
-        print('%s. %s' % (index, res))
+        print('%s. %s - %s' % (index, res, fdesc[res]))
         try:
             features.remove(res)
         except Exception as e:

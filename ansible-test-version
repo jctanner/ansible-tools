@@ -6,7 +6,11 @@ TESTSCRIPT=$2
 ansible-checkout-versions
 
 CWD=$(pwd)
-VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
+if [[ $INVERSION == "devel"* ]]; then
+    VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
+else
+    VERSION=$(ansible-list-versions | egrep ^v$INVERSION | tail -n1)
+fi
 BASEDIR=/var/cache/ansible/version_checkouts
 CACHEDIR=/var/cache/ansible/ansible.checkout.clean
 

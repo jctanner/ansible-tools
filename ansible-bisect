@@ -1,0 +1,167 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import subprocess
+import argparse
+from distutils.version import LooseVersion
+from pprint import pprint
+
+DEVELDIR = "/var/cache/ansible/ansible.checkout.clean"
+BASEDIR = "/var/cache/ansible/version_checkouts"
+LOGFILE = "returncodes.txt"
+
+def run_command(args, capture=False, shell=True):
+    if not capture:
+        p = subprocess.Popen(args, shell=True)
+    else:
+        p = subprocess.Popen(args, shell=True, 
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+    (so, se) = p.communicate()
+    return (p.returncode, so, se)
+
+
+def get_commits(checkoutdir):
+    cmd = 'cd %s; git log --pretty=oneline' % checkoutdir
+    (rc, so, se) = run_command(cmd, capture=True)
+    lines = so.split('\n')
+    commits = [x.strip() for x in lines if x.strip()]
+    commits = [x.split()[0] for x in commits]
+    #import epdb; epdb.st()
+    return commits
+
+
+def checkout_commit(checkoutdir, githash):
+
+    # checkout
+    cmd = 'cd %s; git checkout %s' % (checkoutdir, githash)
+    (rc, so, se) = run_command(cmd, capture=True)
+    assert rc == 0, "unable to checkout %s" % githash
+
+    # update submodules
+    cmd = 'cd %s; git submodule update --recursive' % checkoutdir
+    (rc, so, se) = run_command(cmd, capture=True)
+    assert rc == 0, "unable to update submodules"
+
+def get_version(checkoutdir, checkrc=False):
+    # get the reported version
+    cmd = 'ansible --version'
+    (rc, so, se) = run_command(cmd, capture=True)
+
+    version = None
+    if rc == 0:
+        version = so.split('\n')[0].strip()
+        version = version.split()[1].strip()
+
+    if not version and rc == 0:
+        import epdb; epdb.st()
+
+    return (rc, so, se, version)
+
+
+def run_test(testscript):
+    if not testscript.startswith('/'):
+        testscript = os.path.abspath(testscript)
+    cmd = '%s' % testscript
+    (rc, so, se) = run_command(testscript, capture=True)
+    return (rc, so, se)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('checkoutdir')
+    parser.add_argument('testscript')
+
+    parser.add_argument('--checkrc', help="what returncode should trigger a stop", type=int, default=1)
+    parser.add_argument('--version_start', help="what ansible version to start testing at")
+    parser.add_argument('--version_stop', help="what ansible version to stop testing at")
+    args = parser.parse_args()
+
+    # fixup args
+    if args.version_start:
+        args.version_start = LooseVersion(args.version_start)
+    if args.version_stop:
+        args.version_stop = LooseVersion(args.version_stop)
+
+    # reset the checkout
+    checkout_commit(args.checkoutdir, 'devel')
+
+    # get all known commits
+    commits = get_commits(args.checkoutdir)
+    testcommits = [x for x in commits]
+
+    MARKER1 = None
+    MARKER2 = None
+    STOP = False
+    while not STOP:
+        print('%s commits left to analyze' % len(testcommits))
+
+        mid = len(testcommits) / 2
+        cid = testcommits[mid]
+        print('\t%s' % cid)
+
+        # set the checkout version
+        aversion = checkout_commit(args.checkoutdir, cid)
+
+        # get the version and use as a sanity check
+        (vrc, aso, ase, aversion) = get_version(args.checkoutdir)
+        if vrc != 0:
+            print('\tsanity check failed, skipping')
+            testcommits.remove(cid)
+            import epdb; epdb.st()
+            continue
+        else:
+            print('\tversion: %s' % aversion)
+
+        # move forward if too old
+        aversion = LooseVersion(aversion)
+        if args.version_start:
+            if aversion < args.version_start:
+                testcommits = testcommits[:mid]
+                continue
+
+        (rc, so, se) = run_test(args.testscript)
+        print('\trc: %s' % rc)
+
+        if rc != args.checkrc:
+            print('\tcheckrc not found with this commit')
+            MARKER1 = cid
+            testcommits = testcommits[:mid]
+            continue
+        else:
+            print('\tcheckrc found with this commit')
+            MARKER2 = cid
+            testcommits = commits[commits.index(MARKER2):commits.index(MARKER1)]    
+            if (len(testcommits) / 2) < 3:
+                STOP = True
+
+    if len(testcommits) != 1:
+        print('too many leftover commits...')
+        pprint(testcommits)
+        import epdb; epdb.st()
+    else:
+        print('%s is the breakage candidate, performing further confirmation' % testcommits[0])
+        bidx = commits.index(testcommits[0])
+        bcommit = commits[bidx]
+        tcommit = commits[bidx + 1]
+
+        checkout_commit(args.checkoutdir, tcommit)
+        (rc1, so1, se1) = run_test(args.testscript)
+
+        checkout_commit(args.checkoutdir, bcommit)
+        (rc2, so2, se2) = run_test(args.testscript)
+
+        if rc1 != args.checkrc and rc2 == args.checkrc:
+            print('%s is definitely the the right commit' % bcommit)
+        else:
+            print('something went wrong with bisection')
+        
+        #import epdb; epdb.st()
+
+
+
+if __name__ == '__main__':
+    main()
+

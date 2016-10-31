@@ -1,0 +1,20 @@
+#!/bin/bash
+
+VERSIONDIR=$1
+TESTSCRIPT=$2
+
+HACKING="$VERSIONDIR/hacking/env-setup"
+if [ -f $HACKING ]; then
+    source $HACKING > /dev/null 2>&1
+else
+    echo "ERROR: env-setup does not exist for $VERSIONDIR"
+    exit 1
+fi
+
+chmod +x $TESTSCRIPT
+./$TESTSCRIPT
+RC=$?
+echo "## RC: $RC"
+)
+
+exit $RC

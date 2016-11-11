@@ -1,9 +1,18 @@
 #!/usr/bin/env python
 
+# This bisection script helps isolate commits that changed a behavior of ansible.
+# To use it:
+#   1) check the --help output
+#   2) make an ansible checkout
+#   3) source hacking/env-setup before running the bisect
+#   4) ansible-bisect <checkoutdir> <testsript> <args>
+
 import os
 import sys
 import subprocess
 import argparse
+import datetime
+import pickle
 from distutils.version import LooseVersion
 from pprint import pprint
 
@@ -15,8 +24,8 @@ def run_command(args, capture=False, shell=True):
     if not capture:
         p = subprocess.Popen(args, shell=True)
     else:
-        p = subprocess.Popen(args, shell=True, 
-                             stdout=subprocess.PIPE, 
+        p = subprocess.Popen(args, shell=True,
+                             stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
     (so, se) = p.communicate()
     return (p.returncode, so, se)
@@ -31,6 +40,53 @@ def get_commits(checkoutdir):
     #import epdb; epdb.st()
     return commits
 
+def get_checkout_date(checkoutdir):
+    xdate = None
+    cmd = 'cd %s; git log -1 --pretty=fuller' % (checkoutdir)
+    (rc, so, se) = run_command(cmd, capture=True)
+    for x in so.split('\n'):
+        if x.strip().lower().startswith('commitdate:'):
+            # 'Date:   Fri Nov 11 12:48:45 2016 -0500'
+            x = x.replace('CommitDate:', '', 1).strip()
+            xparts = x.split()
+            x = x.split('-', 1)[0].strip()
+            x = x.split('+', 1)[0].strip()
+            xdate = datetime.datetime.strptime(x, "%a %b %d %H:%M:%S %Y")
+            break
+    return xdate
+
+def get_date_cache():
+    chash = {}
+    cfile = '~/.cache/ansible-commit-dates.pickle'
+    cfile = os.path.expanduser(cfile)
+    if os.path.isfile(cfile):
+        try:
+            with open(cfile, 'rb') as f:
+                chash = pickle.load(f)
+        except Exception as e:
+            print(e)
+    return chash
+
+def save_date_cache(chash):
+    cfile = '~/.cache/ansible-commit-dates.pickle'
+    cfile = os.path.expanduser(cfile)
+    with open(cfile, 'wb') as f:
+        pickle.dump(chash, f)
+
+def get_commit_date(commitid, checkoutdir):
+    xdate = None
+    cmd = 'cd %s; git show --pretty=fuller %s' % (checkoutdir, commitid)
+    (rc, so, se) = run_command(cmd, capture=True)
+    for x in so.split('\n'):
+        if x.strip().lower().startswith('commitdate:'):
+            # 'Date:   Fri Nov 11 12:48:45 2016 -0500'
+            x = x.replace('CommitDate:', '', 1).strip()
+            xparts = x.split()
+            x = x.split('-', 1)[0].strip()
+            x = x.split('+', 1)[0].strip()
+            xdate = datetime.datetime.strptime(x, "%a %b %d %H:%M:%S %Y")
+            break
+    return xdate
 
 def checkout_commit(checkoutdir, githash):
 
@@ -67,6 +123,51 @@ def run_test(testscript):
     (rc, so, se) = run_command(testscript, capture=True)
     return (rc, so, se)
 
+def slice_dates(commits, start, stop):
+    '''Determine date for commits and limit to a given range'''
+    start_idx = None
+    stop_idx = None
+
+    if start:
+        start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    if stop:
+        stop = datetime.datetime.strptime(stop, '%Y-%m-%d')
+
+    # get dates for the commits
+    commit_dates = get_date_cache()
+    for cid,commitid in enumerate(commits):
+        if commitid not in commit_dates:
+            # get the date for commit
+            ts = get_commit_date(commitid, args.checkoutdir)
+            commit_dates[commitid] = ts
+            print('%s %s' % (commitid, commit_dates[commitid]))
+
+        if start:
+            if commit_dates[commitid] <= start and not start_idx:
+                start_idx = cid
+                if not stop:
+                    break
+        if stop:
+            if commit_dates[commitid] >= stop and not stop_idx:
+                stop_idx = cid
+                if not start:
+                    break
+
+        if start_idx and stop_idx:
+            break
+
+    # store dates to save time
+    save_date_cache(commit_dates)
+
+    if start and stop:
+        commits=commits[start_idx:stop_idx]
+    elif start and not stop:
+        commits=commits[start_idx:]
+    elif not start and stop:
+        commits=commits[:stop_idx]
+
+    save_date_cache(commit_dates)
+    return commits
 
 def main():
     parser = argparse.ArgumentParser()
@@ -75,8 +176,11 @@ def main():
     parser.add_argument('testscript')
 
     parser.add_argument('--checkrc', help="what returncode should trigger a stop", type=int, default=1)
+    parser.add_argument('--ignorerc', help="what returncodes to ignore", type=int, default=1)
     parser.add_argument('--version_start', help="what ansible version to start testing at")
     parser.add_argument('--version_stop', help="what ansible version to stop testing at")
+    parser.add_argument('--date_start', help="what date to start testing at (YYYY-MM-DD)")
+    parser.add_argument('--date_stop', help="what date to stop testing at (YYYY-MM-DD)")
     args = parser.parse_args()
 
     # fixup args
@@ -90,17 +194,33 @@ def main():
 
     # get all known commits
     commits = get_commits(args.checkoutdir)
+
+    # limit commits to a date range
+    if args.date_start or args.date_stop:
+        print('Total commits before slicing: %s' % len(commits))
+        commits = slice_dates(commits, args.date_start, args.date_stop)
+        print('Total commits after slicing: %s' % len(commits))
+
+    # copy the list so it can be reduced
     testcommits = [x for x in commits]
 
     MARKER1 = None
     MARKER2 = None
     STOP = False
+    RESMAP = {}
+    SKIPPED = False
     while not STOP:
         print('%s commits left to analyze' % len(testcommits))
+        if not testcommits:
+            sys.exit(1)
 
-        mid = len(testcommits) / 2
+        if SKIPPED:
+            mid = 0
+        else:
+            mid = len(testcommits) / 2
         cid = testcommits[mid]
         print('\t%s' % cid)
+        SKIPPED = False
 
         # set the checkout version
         aversion = checkout_commit(args.checkoutdir, cid)
@@ -108,9 +228,12 @@ def main():
         # get the version and use as a sanity check
         (vrc, aso, ase, aversion) = get_version(args.checkoutdir)
         if vrc != 0:
+            cdate = get_checkout_date(args.checkoutdir)
+            print('\t%s' % cdate)
             print('\tsanity check failed, skipping')
             testcommits.remove(cid)
-            import epdb; epdb.st()
+            #import epdb; epdb.st()
+            SKIPPED = True
             continue
         else:
             print('\tversion: %s' % aversion)
@@ -124,6 +247,7 @@ def main():
 
         (rc, so, se) = run_test(args.testscript)
         print('\trc: %s' % rc)
+        RESMAP[cid] = (rc, so, se)
 
         if rc != args.checkrc:
             print('\tcheckrc not found with this commit')
@@ -133,13 +257,26 @@ def main():
         else:
             print('\tcheckrc found with this commit')
             MARKER2 = cid
-            testcommits = commits[commits.index(MARKER2):commits.index(MARKER1)]    
+            testcommits = commits[commits.index(MARKER2):commits.index(MARKER1)]
             if (len(testcommits) / 2) < 3:
                 STOP = True
 
-    if len(testcommits) != 1:
+    if len(testcommits) == 2:
+        print('narrowing down the last 2 commits')
+
+        checkout_commit(args.checkoutdir, testcommits[0])
+        (rc1, so1, se1) = run_test(args.testscript)
+
+        checkout_commit(args.checkoutdir, testcommits[0])
+        (rc2, so2, se2) = run_test(args.testscript)
+
+        import epdb; epdb.st()
+
+    elif len(testcommits) != 1:
         print('too many leftover commits...')
-        pprint(testcommits)
+        #pprint(testcommits)
+        for x in testcommits:
+            print('\t', x, RESMAP[x][0])
         import epdb; epdb.st()
     else:
         print('%s is the breakage candidate, performing further confirmation' % testcommits[0])
@@ -157,8 +294,6 @@ def main():
             print('%s is definitely the the right commit' % bcommit)
         else:
             print('something went wrong with bisection')
-        
-        #import epdb; epdb.st()
 
 
 

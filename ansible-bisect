@@ -20,16 +20,20 @@ DEVELDIR = "/var/cache/ansible/ansible.checkout.clean"
 BASEDIR = "/var/cache/ansible/version_checkouts"
 LOGFILE = "returncodes.txt"
 
-def run_command(args, capture=False, shell=True):
+def run_command(args, capture=False, shell=True, cwd=None):
     if not capture:
-        p = subprocess.Popen(args, shell=True)
+        p = subprocess.Popen(args, shell=True, cwd=cwd)
     else:
-        p = subprocess.Popen(args, shell=True,
+        p = subprocess.Popen(args, shell=True, cwd=cwd,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE)
     (so, se) = p.communicate()
     return (p.returncode, so, se)
 
+def clean_checkout(checkoutdir):
+    '''Remove all .pyc files in a checkout'''
+    cmd = 'find %s -type f -name "*.pyc" | xargs rm -f' % checkoutdir
+    (rc, so, se) = run_command(cmd, capture=True)
 
 def get_commits(checkoutdir):
     cmd = 'cd %s; git log --pretty=oneline' % checkoutdir
@@ -65,6 +69,7 @@ def get_date_cache():
                 chash = pickle.load(f)
         except Exception as e:
             print(e)
+            import epdb; epdb.st()
     return chash
 
 def save_date_cache(chash):
@@ -102,28 +107,37 @@ def checkout_commit(checkoutdir, githash):
 
 def get_version(checkoutdir, checkrc=False):
     # get the reported version
-    cmd = 'ansible --version'
+    cmd = 'source %s/hacking/env-setup ; ansible --version' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
 
     version = None
     if rc == 0:
-        version = so.split('\n')[0].strip()
-        version = version.split()[1].strip()
+        for x in so.split('\n'):
+            if x.startswith('ansible ') or 'detached HEAD' in x:
+                version = x.strip()
+                version = version.split()[1].strip()
+                break
 
     if not version and rc == 0:
         import epdb; epdb.st()
 
+    #if version == 'egg_info':
+    #    import epdb; epdb.st()
+
     return (rc, so, se, version)
 
 
-def run_test(testscript):
+def run_test(checkoutdir, testscript, capture=True):
+    if not checkoutdir.startswith('/'):
+        checkoutdir = os.path.abspath(checkoutdir)
     if not testscript.startswith('/'):
         testscript = os.path.abspath(testscript)
-    cmd = '%s' % testscript
-    (rc, so, se) = run_command(testscript, capture=True)
+
+    cmd = 'source %s/hacking/env-setup ; %s' % (checkoutdir, testscript)
+    (rc, so, se) = run_command(cmd, capture=capture, cwd=os.getcwd())
     return (rc, so, se)
 
-def slice_dates(commits, start, stop):
+def slice_dates(checkoutdir, commits, start, stop):
     '''Determine date for commits and limit to a given range'''
     start_idx = None
     stop_idx = None
@@ -138,35 +152,21 @@ def slice_dates(commits, start, stop):
     for cid,commitid in enumerate(commits):
         if commitid not in commit_dates:
             # get the date for commit
-            ts = get_commit_date(commitid, args.checkoutdir)
+            ts = get_commit_date(commitid, checkoutdir)
             commit_dates[commitid] = ts
             print('%s %s' % (commitid, commit_dates[commitid]))
 
-        if start:
-            if commit_dates[commitid] <= start and not start_idx:
-                start_idx = cid
-                if not stop:
-                    break
-        if stop:
-            if commit_dates[commitid] >= stop and not stop_idx:
-                stop_idx = cid
-                if not start:
-                    break
-
-        if start_idx and stop_idx:
-            break
-
-    # store dates to save time
+    # store dates to save time later
     save_date_cache(commit_dates)
 
     if start and stop:
-        commits=commits[start_idx:stop_idx]
+        commits = [x for x in commits if commit_dates[x] > start and commit_dates[x] < stop]
     elif start and not stop:
-        commits=commits[start_idx:]
+        commits = [x for x in commits if commit_dates[x] > start]
     elif not start and stop:
-        commits=commits[:stop_idx]
+        commits = [x for x in commits if commit_dates[x] < stop]
 
-    save_date_cache(commit_dates)
+    #import epdb; epdb.st()
     return commits
 
 def main():
@@ -175,6 +175,8 @@ def main():
     parser.add_argument('checkoutdir')
     parser.add_argument('testscript')
 
+    parser.add_argument('--direction', help="which direction to test foward|[backward]",
+                        choices=['backward', 'forward'], default='backward')
     parser.add_argument('--checkrc', help="what returncode should trigger a stop", type=int, default=1)
     parser.add_argument('--ignorerc', help="what returncodes to ignore", type=int, default=1)
     parser.add_argument('--version_start', help="what ansible version to start testing at")
@@ -198,11 +200,16 @@ def main():
     # limit commits to a date range
     if args.date_start or args.date_stop:
         print('Total commits before slicing: %s' % len(commits))
-        commits = slice_dates(commits, args.date_start, args.date_stop)
+        commits = slice_dates(args.checkoutdir, commits, args.date_start, args.date_stop)
         print('Total commits after slicing: %s' % len(commits))
 
     # copy the list so it can be reduced
     testcommits = [x for x in commits]
+
+    # reverse list if direction should be forward
+    if args.direction == 'forward':
+        commits = [x for x in reversed(commits)]
+        testcommits = [x for x in reversed(testcommits)]
 
     MARKER1 = None
     MARKER2 = None
@@ -222,13 +229,17 @@ def main():
         print('\t%s' % cid)
         SKIPPED = False
 
+        # get rid of previous remnants
+        clean_checkout(args.checkoutdir)
         # set the checkout version
         aversion = checkout_commit(args.checkoutdir, cid)
+        # check the commit date
+        cdate = get_checkout_date(args.checkoutdir)
+        print('\tdate: %s' % cdate)
 
         # get the version and use as a sanity check
         (vrc, aso, ase, aversion) = get_version(args.checkoutdir)
         if vrc != 0:
-            cdate = get_checkout_date(args.checkoutdir)
             print('\t%s' % cdate)
             print('\tsanity check failed, skipping')
             testcommits.remove(cid)
@@ -245,9 +256,14 @@ def main():
                 testcommits = testcommits[:mid]
                 continue
 
-        (rc, so, se) = run_test(args.testscript)
+        (rc, so, se) = run_test(args.checkoutdir, args.testscript)
         print('\trc: %s' % rc)
         RESMAP[cid] = (rc, so, se)
+
+        if rc == 127:
+            print(so)
+            print(se)
+            import epdb; epdb.st()
 
         if rc != args.checkrc:
             print('\tcheckrc not found with this commit')
@@ -265,10 +281,10 @@ def main():
         print('narrowing down the last 2 commits')
 
         checkout_commit(args.checkoutdir, testcommits[0])
-        (rc1, so1, se1) = run_test(args.testscript)
+        (rc1, so1, se1) = run_test(args.checkoutdir, args.testscript)
 
         checkout_commit(args.checkoutdir, testcommits[0])
-        (rc2, so2, se2) = run_test(args.testscript)
+        (rc2, so2, se2) = run_test(args.checkoutdir, args.testscript)
 
         import epdb; epdb.st()
 
@@ -285,10 +301,10 @@ def main():
         tcommit = commits[bidx + 1]
 
         checkout_commit(args.checkoutdir, tcommit)
-        (rc1, so1, se1) = run_test(args.testscript)
+        (rc1, so1, se1) = run_test(args.checkoutdir, args.testscript)
 
         checkout_commit(args.checkoutdir, bcommit)
-        (rc2, so2, se2) = run_test(args.testscript)
+        (rc2, so2, se2) = run_test(args.checkoutdir, args.testscript)
 
         if rc1 != args.checkrc and rc2 == args.checkrc:
             print('%s is definitely the the right commit' % bcommit)

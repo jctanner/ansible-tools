@@ -15,6 +15,5 @@ chmod +x $TESTSCRIPT
 ./$TESTSCRIPT
 RC=$?
 echo "## RC: $RC"
-)
 
 exit $RC

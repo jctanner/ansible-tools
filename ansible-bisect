@@ -177,7 +177,7 @@ def main():
 
     parser.add_argument('--direction', help="which direction to test foward|[backward]",
                         choices=['backward', 'forward'], default='backward')
-    parser.add_argument('--checkrc', help="what returncode should trigger a stop", type=int, default=1)
+    parser.add_argument('--checkrc', help="what returncode should trigger a stop (can be !<INT>)", type=str, default='1')
     parser.add_argument('--ignorerc', help="what returncodes to ignore", type=int, default=1)
     parser.add_argument('--version_start', help="what ansible version to start testing at")
     parser.add_argument('--version_stop', help="what ansible version to stop testing at")
@@ -190,6 +190,12 @@ def main():
         args.version_start = LooseVersion(args.version_start)
     if args.version_stop:
         args.version_stop = LooseVersion(args.version_stop)
+    if args.checkrc.startswith('!'):
+        REVERSE_CHECKOP = True
+        args.checkrc = int(args.checkrc.replace('!', ''))
+    else:
+        REVERSE_CHECKOP = False
+        args.checkrc = int(args.checkrc)
 
     # reset the checkout
     checkout_commit(args.checkoutdir, 'devel')
@@ -211,15 +217,19 @@ def main():
         commits = [x for x in reversed(commits)]
         testcommits = [x for x in reversed(testcommits)]
 
+    BADCOMMIT = None
     MARKER1 = None
     MARKER2 = None
     STOP = False
     RESMAP = {}
+    TSMAP = {}
     SKIPPED = False
     while not STOP:
         print('%s commits left to analyze' % len(testcommits))
         if not testcommits:
             sys.exit(1)
+        elif len(testcommits) == 1:
+            break
 
         if SKIPPED:
             mid = 0
@@ -235,6 +245,7 @@ def main():
         aversion = checkout_commit(args.checkoutdir, cid)
         # check the commit date
         cdate = get_checkout_date(args.checkoutdir)
+        TSMAP[cid] = cdate
         print('\tdate: %s' % cdate)
 
         # get the version and use as a sanity check
@@ -260,15 +271,29 @@ def main():
         print('\trc: %s' % rc)
         RESMAP[cid] = (rc, so, se)
 
+        '''
         if rc == 127:
             print(so)
             print(se)
             import epdb; epdb.st()
+        match = False
+        if args.checkrc.startswith('!'):
+            # negative test
+            if str(rc) != args.checkrc.replace('!', ''):
+                match = True
+        else:
+            # postive test
+            if str(rc) == args.checkrc:
+                match = True
+        #import epdb; epdb.st()
+        '''
 
-        if rc != args.checkrc:
-            print('\tcheckrc not found with this commit')
+        #if rc != args.checkrc:
+        #if not match:
+        if (not REVERSE_CHECKOP and rc != args.checkrc) or (REVERSE_CHECKOP and rc == args.checkrc):
+            print('\tcheckrc(%s) not found with this commit' % args.checkrc)
             MARKER1 = cid
-            testcommits = testcommits[:mid]
+            testcommits = testcommits[:mid+1]
             continue
         else:
             print('\tcheckrc found with this commit')
@@ -277,40 +302,31 @@ def main():
             if (len(testcommits) / 2) < 3:
                 STOP = True
 
-    if len(testcommits) == 2:
-        print('narrowing down the last 2 commits')
-
-        checkout_commit(args.checkoutdir, testcommits[0])
-        (rc1, so1, se1) = run_test(args.checkoutdir, args.testscript)
-
-        checkout_commit(args.checkoutdir, testcommits[0])
-        (rc2, so2, se2) = run_test(args.checkoutdir, args.testscript)
-
+    if not testcommits:
+        print('no commits left ...')
+        if len(RESMAP) > 0:
+            for item in RESMAP.items():
+                print(item[0], item[1][0])
         import epdb; epdb.st()
 
-    elif len(testcommits) != 1:
-        print('too many leftover commits...')
-        #pprint(testcommits)
-        for x in testcommits:
-            print('\t', x, RESMAP[x][0])
-        import epdb; epdb.st()
     else:
-        print('%s is the breakage candidate, performing further confirmation' % testcommits[0])
-        bidx = commits.index(testcommits[0])
-        bcommit = commits[bidx]
-        tcommit = commits[bidx + 1]
+        print('checking the last %s possible commits' % len(testcommits))
 
-        checkout_commit(args.checkoutdir, tcommit)
-        (rc1, so1, se1) = run_test(args.checkoutdir, args.testscript)
+        for x in testcommits:
 
-        checkout_commit(args.checkoutdir, bcommit)
-        (rc2, so2, se2) = run_test(args.checkoutdir, args.testscript)
+            if x not in TSMAP or x not in RESMAP:
 
-        if rc1 != args.checkrc and rc2 == args.checkrc:
-            print('%s is definitely the the right commit' % bcommit)
-        else:
-            print('something went wrong with bisection')
+                clean_checkout(args.checkoutdir)
+                checkout_commit(args.checkoutdir, x)
 
+                if x not in TSMAP:
+                    cdate = get_checkout_date(args.checkoutdir)
+                    TSMAP[x] = cdate
+                if x not in RESMAP:
+                    (rc, so, se) = run_test(args.checkoutdir, args.testscript)
+                    RESMAP[x] = (rc, so, se)
+
+            print(RESMAP[x][0], x, TSMAP[x])
 
 
 if __name__ == '__main__':

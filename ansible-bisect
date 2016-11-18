@@ -59,9 +59,11 @@ def get_checkout_date(checkoutdir):
             break
     return xdate
 
-def get_date_cache():
+def get_date_cache(cachedir='.cache'):
     chash = {}
-    cfile = '~/.cache/ansible-commit-dates.pickle'
+    if not os.path.isdir(cachedir):
+        os.makedirs(cachedir)
+    cfile = '%s/ansible-commit-dates.pickle' % cachedir
     cfile = os.path.expanduser(cfile)
     if os.path.isfile(cfile):
         try:
@@ -72,8 +74,10 @@ def get_date_cache():
             import epdb; epdb.st()
     return chash
 
-def save_date_cache(chash):
-    cfile = '~/.cache/ansible-commit-dates.pickle'
+def save_date_cache(chash, cachedir='.cache'):
+    if not os.path.isdir(cachedir):
+        os.makedirs(cachedir)
+    cfile = '%s/ansible-commit-dates.pickle' % cachedir
     cfile = os.path.expanduser(cfile)
     with open(cfile, 'wb') as f:
         pickle.dump(chash, f)
@@ -105,9 +109,21 @@ def checkout_commit(checkoutdir, githash):
     (rc, so, se) = run_command(cmd, capture=True)
     assert rc == 0, "unable to update submodules"
 
+def _get_hacking_dir(checkoutdir):
+    if not os.path.isdir(os.path.join(checkoutdir, 'hacking')):
+        # possibly using the submodule dir as the checkout
+        hacking_dir = os.path.abspath('%s/../../../../hacking' % checkoutdir)
+        if not os.path.isdir(hacking_dir):
+            print('NO HACKING DIRECTORY COULD BE FOUND IN CHECKOUT!!!')
+            sys.exit(1)
+    else:
+        hacking_dir = os.path.join(checkoutdir, 'hacking')
+    return hacking_dir
+
 def get_version(checkoutdir, checkrc=False):
     # get the reported version
-    cmd = 'source %s/hacking/env-setup ; ansible --version' % checkoutdir
+    hacking_dir = _get_hacking_dir(checkoutdir)
+    cmd = 'source %s/env-setup ; ansible --version' % hacking_dir
     (rc, so, se) = run_command(cmd, capture=True)
 
     version = None
@@ -126,14 +142,15 @@ def get_version(checkoutdir, checkrc=False):
 
     return (rc, so, se, version)
 
-
 def run_test(checkoutdir, testscript, capture=True):
     if not checkoutdir.startswith('/'):
         checkoutdir = os.path.abspath(checkoutdir)
     if not testscript.startswith('/'):
         testscript = os.path.abspath(testscript)
 
-    cmd = 'source %s/hacking/env-setup ; %s' % (checkoutdir, testscript)
+    hacking_dir = _get_hacking_dir(checkoutdir)
+
+    cmd = 'source %s/env-setup ; %s' % (hacking_dir, testscript)
     (rc, so, se) = run_command(cmd, capture=capture, cwd=os.getcwd())
     return (rc, so, se)
 
@@ -169,6 +186,129 @@ def slice_dates(checkoutdir, commits, start, stop):
     #import epdb; epdb.st()
     return commits
 
+def get_current_branch(checkoutdir):
+    cmd = "git branch | egrep ^* | awk '{print $2}'"
+    (rc, so, se) = run_command(cmd, capture=True, cwd=checkoutdir)
+    return so.strip()
+
+
+
+class AnsibleBisector(object):
+    results = {}
+    commits = []
+    checkrc = 0
+    direction = 'backward'
+    version_start = None
+    version_stop = None
+    date_start = None
+    date_stop = None
+    marker = None
+
+    def __init__(self, commits, **kwargs):
+        self.commits = commits
+        self.results = {}
+        self.current_index = None
+
+    def print_status(self):
+        if self.marker:
+            for idx,x in enumerate(self.commits):
+                if idx <= (self.marker - 10) or idx >= (self.marker + 10):
+                    continue
+
+                rc = self.results.get(x, {}).get('rc', None)
+                if self.marker and idx == self.marker:
+                    print('%s %s %s <-- marker' % (idx, x, rc))
+                elif idx == self.current_index:
+                    print('%s %s %s <-- current' % (idx, x, rc))
+                else:
+                    print('%s %s %s' % (idx, x, rc))
+        else:
+            for idx,x in enumerate(self.commits):
+                rc = self.results.get(x, {}).get('rc', None)
+                print('%s %s %s' % (idx, x, rc))
+
+
+    def get_bisected_commit(self):
+        # we should have a marker at this point
+        if not self.marker:
+            return None
+
+        a = self.commits[self.marker-1]
+        b = self.commits[self.marker]
+        c = self.commits[self.marker+1]
+
+        if not b in self.results or c not in self.results:
+            import epdb; epdb.st()
+
+        if self.results[b]['rc'] == self.checkrc and self.results[c]['rc'] != self.checkrc:
+            #self.print_status()
+            return c
+        else:
+            import epdb; epdb.st()
+
+
+    def get_commit_to_test(self):
+        # start at the middle
+        if not self.current_index:
+            self.current_index = len(self.commits) / 2
+        chash = self.commits[self.current_index]
+        if chash in self.results:
+            # looped back to a tested commit
+            #print('WARNING: LOOPED BACK TO %s' % self.current_index)
+            #next_index = self.current_index + 1
+            next_index = self.marker + 1
+            next_commit = self.commits[next_index]
+
+            if next_commit not in self.results:
+                self.current_index = next_index
+                return self.commits[self.current_index]
+            else:
+                # No more to test...
+                return None
+        else:
+            return self.commits[self.current_index]
+
+
+    def set_result(self, commit, returncode, stdout, stderr):
+        if commit not in self.results:
+            self.results[commit] = {'rc': None, 'so': None, 'se': None}
+        self.results[commit]['rc'] = returncode
+        self.results[commit]['so'] = stdout
+        self.results[commit]['se'] = stderr
+
+        # move the marker
+        self.set_current_index()
+
+    def set_current_index(self):
+        last_index = self.current_index
+        last_commit = self.commits[last_index]
+        last_rc = self.results[last_commit]['rc']
+        last_so = self.results[last_commit]['so']
+        last_se = self.results[last_commit]['se']
+
+        if last_rc == self.checkrc:
+            # move forward
+            self.marker = last_index
+            choices = self.commits[last_index:]
+            new_index = len(choices) / 2
+            self.current_index = last_index + new_index
+        else:
+            # move backward
+            if self.marker:
+                choices = self.commits[self.marker:last_index]
+            else:
+                choices = self.commits[:last_index]
+            new_index = len(choices) / 2
+            if self.marker:
+                self.current_index = self.marker + new_index
+            else:
+                self.current_index = new_index
+            #import epdb; epdb.st()
+
+        #print('current: %s' % self.current_index)
+
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -197,8 +337,13 @@ def main():
         REVERSE_CHECKOP = False
         args.checkrc = int(args.checkrc)
 
+    # what is the primary branch?
+    cbranch = get_current_branch(args.checkoutdir)
+    if cbranch.endswith('HEAD'):
+        cbranch = 'HEAD'
+
     # reset the checkout
-    checkout_commit(args.checkoutdir, 'devel')
+    checkout_commit(args.checkoutdir, cbranch)
 
     # get all known commits
     commits = get_commits(args.checkoutdir)
@@ -213,7 +358,7 @@ def main():
     testcommits = [x for x in commits]
 
     # reverse list if direction should be forward
-    if args.direction == 'forward':
+    if args.direction == 'backward':
         commits = [x for x in reversed(commits)]
         testcommits = [x for x in reversed(testcommits)]
 
@@ -253,6 +398,8 @@ def main():
         if vrc != 0:
             print('\t%s' % cdate)
             print('\tsanity check failed, skipping')
+            for line in (str(aso) + str(ase)).split('\n'):
+                print('\t\t%s' % line)
             testcommits.remove(cid)
             #import epdb; epdb.st()
             SKIPPED = True

@@ -65,13 +65,60 @@ class TestAnsibleBisector(unittest.TestCase):
         bad_commit = ab.get_bisected_commit()
         assert bad_commit == 'aae', "bisected wrong commit"
 
-    def test_random_iterations(self):
+    def test_skipping(self):
+        print('')
+        total = 10
+        testcommits = [[str(uuid.uuid4()), 0, True] for x in xrange(0,total)]
+
+        # set a random marker
+        marker = random.randrange(2, len(testcommits))
+        bad_commit = testcommits[marker][0]
+
+        # change the rc for all commits starting at the marker
+        for idx,x in enumerate(testcommits):
+            if idx >= marker:
+                testcommits[idx][1] = 1
+
+        # inject some random sanity check failures
+        for x in xrange(0, 4):
+            bci = random.randrange(0, total)
+            if bci != marker:
+                testcommits[bci][2] = False
+
+        import pprint; pprint.pprint(testcommits)
+
+        # create the bisector
+        ab = AnsibleBisector([x[0] for x in testcommits])
+        ab.expected = bad_commit
+
+        # get the first test and start bisect
+        tc = ab.get_commit_to_test()
+        while tc:
+            ctuple = self.get_commit(tc, testcommits)
+
+            # get rid of it if it's not sane
+            if not ctuple[2]:
+                ab.remove_commit(tc)
+            else:
+                ab.set_result(tc, ctuple[1], '', '')
+
+            tc = ab.get_commit_to_test()
+
+        ab.print_status()
+        bisected_commit = ab.get_bisected_commit()
+        print("EXPECTED: %s" % bad_commit)
+        print("BISECTED: %s" % bisected_commit)
+        if bad_commit != bisected_commit:
+            import epdb; epdb.st()
+        assert bisected_commit == bad_commit, "bisected wrong commit"
+
+    def test_basic_random_iterations(self):
         print('')
 
-        for i in xrange(0, 1000):
+        for i in xrange(0, 5):
 
             # make a randomly sized list of commits
-            total = random.randrange(0, 20000)
+            total = random.randrange(10, 2000)
             testcommits = [[str(uuid.uuid4()), 0] for x in xrange(0,total)]
 
             # set a random marker
@@ -93,7 +140,46 @@ class TestAnsibleBisector(unittest.TestCase):
                 tc = ab.get_commit_to_test()
 
             bisected_commit = ab.get_bisected_commit()
-            print("EXPECTED: %s" % bad_commit)
-            print("BISECTED: %s" % bisected_commit)
+            #print("EXPECTED: %s" % bad_commit)
+            #print("BISECTED: %s" % bisected_commit)
+            assert bisected_commit == bad_commit, "bisected wrong commit"
+
+    def test_basic_random_iterations_with_skip(self):
+        print('')
+
+        for i in xrange(0, 5):
+
+            # make a randomly sized list of commits
+            total = random.randrange(10, 2000)
+            testcommits = [[str(uuid.uuid4()), 0, True] for x in xrange(0,total)]
+
+            # set a random marker
+            marker = random.randrange(0, len(testcommits))
+            bad_commit = testcommits[marker][0]
+
+            # change the rc for all commits starting at the marker
+            for idx,x in enumerate(testcommits):
+                if idx >= marker:
+                    testcommits[idx][1] = 1
+
+            ab = AnsibleBisector([x[0] for x in testcommits])
+
+            # get the first test
+            tc = ab.get_commit_to_test()
+            while tc:
+                ctuple = self.get_commit(tc, testcommits)
+                #import epdb; epdb.st()
+
+                # get rid of it if it's not sane
+                if not ctuple[2]:
+                    ab.remove_commit(tc)
+                else:
+                    ab.set_result(tc, ctuple[1], '', '')
+
+                tc = ab.get_commit_to_test()
+
+            bisected_commit = ab.get_bisected_commit()
+            #print("EXPECTED: %s" % bad_commit)
+            #print("BISECTED: %s" % bisected_commit)
             assert bisected_commit == bad_commit, "bisected wrong commit"
 

@@ -203,8 +203,10 @@ class AnsibleBisector(object):
     date_start = None
     date_stop = None
     marker = None
+    expected = None
 
     def __init__(self, commits, **kwargs):
+        self.expected = None
         self.commits = commits
         self.results = {}
         self.current_index = None
@@ -242,21 +244,37 @@ class AnsibleBisector(object):
 
         if self.results[b]['rc'] == self.checkrc and self.results[c]['rc'] != self.checkrc:
             #self.print_status()
+            if self.expected and c != self.expected:
+                self.print_status()
+                import epdb; epdb.st()
             return c
         else:
             import epdb; epdb.st()
 
-
     def get_commit_to_test(self):
+        '''Tell the caller what to test next'''
         # start at the middle
         if not self.current_index:
             self.current_index = len(self.commits) / 2
-        chash = self.commits[self.current_index]
+            #self.current_index = (len(self.commits) - 1) / 2
+
+        #if self.current_index > len(self.commits) - 1:
+        #    import epdb; epdb.st()
+
+        try:
+            chash = self.commits[self.current_index]
+        except IndexError as e:
+            self.current_index -= 1
+            chash = self.commits[self.current_index]
+            #print(e)
+            #import epdb; epdb.st()
+
         if chash in self.results:
             # looped back to a tested commit
-            #print('WARNING: LOOPED BACK TO %s' % self.current_index)
-            #next_index = self.current_index + 1
-            next_index = self.marker + 1
+            if self.marker:
+                next_index = self.marker + 1
+            else:
+                next_index = 0
             next_commit = self.commits[next_index]
 
             if next_commit not in self.results:
@@ -268,8 +286,44 @@ class AnsibleBisector(object):
         else:
             return self.commits[self.current_index]
 
+    def remove_commit(self, commit):
+        '''Remove a completely busted commit'''
+        if commit in self.results:
+            self.results.pop(commit, None)
+
+        # need to move the marker back one if it's greater than this index
+        cindex = self.commits.index(commit)
+        if self.marker and self.marker > cindex:
+            self.marker -= 1
+
+        # iterate to the next testable commit index
+        nindex = cindex + 1
+        while True and nindex < len(self.commits):
+            if self.commits[nindex] not in self.results:
+                break
+            nindex += 1
+
+        if nindex > len(self.commits) - 1:
+            # went over the size of the list, need to go backwards
+            if self.marker:
+                nindex = self.marker - 1
+            else:
+                nindex = 0
+            while True and nindex < len(self.commits):
+                if self.commits[nindex] not in self.results:
+                    break
+                nindex += 1
+
+        if nindex > len(self.commits) - 1:
+            import epdb; epdb.st()
+
+        self.current_index = nindex
+
+        # drop this commit from the list
+        self.commits.remove(commit)
 
     def set_result(self, commit, returncode, stdout, stderr):
+        '''Caller reports the test result with this'''
         if commit not in self.results:
             self.results[commit] = {'rc': None, 'so': None, 'se': None}
         self.results[commit]['rc'] = returncode
@@ -287,8 +341,9 @@ class AnsibleBisector(object):
         last_se = self.results[last_commit]['se']
 
         if last_rc == self.checkrc:
-            # move forward
-            self.marker = last_index
+            # move forward if marker is greater
+            if last_index > self.marker:
+                self.marker = last_index
             choices = self.commits[last_index:]
             new_index = len(choices) / 2
             self.current_index = last_index + new_index
@@ -306,7 +361,6 @@ class AnsibleBisector(object):
             #import epdb; epdb.st()
 
         #print('current: %s' % self.current_index)
-
 
 
 def main():
@@ -354,43 +408,22 @@ def main():
         commits = slice_dates(args.checkoutdir, commits, args.date_start, args.date_stop)
         print('Total commits after slicing: %s' % len(commits))
 
-    # copy the list so it can be reduced
-    testcommits = [x for x in commits]
-
     # reverse list if direction should be forward
     if args.direction == 'backward':
         commits = [x for x in reversed(commits)]
-        testcommits = [x for x in reversed(testcommits)]
 
-    BADCOMMIT = None
-    MARKER1 = None
-    MARKER2 = None
-    STOP = False
-    RESMAP = {}
-    TSMAP = {}
-    SKIPPED = False
-    while not STOP:
-        print('%s commits left to analyze' % len(testcommits))
-        if not testcommits:
-            sys.exit(1)
-        elif len(testcommits) == 1:
-            break
-
-        if SKIPPED:
-            mid = 0
-        else:
-            mid = len(testcommits) / 2
-        cid = testcommits[mid]
-        print('\t%s' % cid)
-        SKIPPED = False
-
+    ab = AnsibleBisector(commits)
+    tc = ab.get_commit_to_test()
+    while tc:
         # get rid of previous remnants
         clean_checkout(args.checkoutdir)
+
         # set the checkout version
-        aversion = checkout_commit(args.checkoutdir, cid)
+        aversion = checkout_commit(args.checkoutdir, tc)
+
         # check the commit date
         cdate = get_checkout_date(args.checkoutdir)
-        TSMAP[cid] = cdate
+        TSMAP[tc] = cdate
         print('\tdate: %s' % cdate)
 
         # get the version and use as a sanity check
@@ -400,9 +433,10 @@ def main():
             print('\tsanity check failed, skipping')
             for line in (str(aso) + str(ase)).split('\n'):
                 print('\t\t%s' % line)
-            testcommits.remove(cid)
-            #import epdb; epdb.st()
-            SKIPPED = True
+            # remove the commit
+            ab.remove_commit(tc)
+            # get next commit
+            tc = ab.get_commit_to_test()
             continue
         else:
             print('\tversion: %s' % aversion)
@@ -411,70 +445,18 @@ def main():
         aversion = LooseVersion(aversion)
         if args.version_start:
             if aversion < args.version_start:
-                testcommits = testcommits[:mid]
+                # remove the commit
+                ab.remove_commit(tc)
+                # get next commit
+                tc = ab.get_commit_to_test()
                 continue
 
+        # run the test
         (rc, so, se) = run_test(args.checkoutdir, args.testscript)
-        print('\trc: %s' % rc)
-        RESMAP[cid] = (rc, so, se)
+        ab.set_result(tc, rc, so, se)
+        tc = ab.get_commit_to_test()
 
-        '''
-        if rc == 127:
-            print(so)
-            print(se)
-            import epdb; epdb.st()
-        match = False
-        if args.checkrc.startswith('!'):
-            # negative test
-            if str(rc) != args.checkrc.replace('!', ''):
-                match = True
-        else:
-            # postive test
-            if str(rc) == args.checkrc:
-                match = True
-        #import epdb; epdb.st()
-        '''
-
-        #if rc != args.checkrc:
-        #if not match:
-        if (not REVERSE_CHECKOP and rc != args.checkrc) or (REVERSE_CHECKOP and rc == args.checkrc):
-            print('\tcheckrc(%s) not found with this commit' % args.checkrc)
-            MARKER1 = cid
-            testcommits = testcommits[:mid+1]
-            continue
-        else:
-            print('\tcheckrc found with this commit')
-            MARKER2 = cid
-            testcommits = commits[commits.index(MARKER2):commits.index(MARKER1)]
-            if (len(testcommits) / 2) < 3:
-                STOP = True
-
-    if not testcommits:
-        print('no commits left ...')
-        if len(RESMAP) > 0:
-            for item in RESMAP.items():
-                print(item[0], item[1][0])
-        import epdb; epdb.st()
-
-    else:
-        print('checking the last %s possible commits' % len(testcommits))
-
-        for x in testcommits:
-
-            if x not in TSMAP or x not in RESMAP:
-
-                clean_checkout(args.checkoutdir)
-                checkout_commit(args.checkoutdir, x)
-
-                if x not in TSMAP:
-                    cdate = get_checkout_date(args.checkoutdir)
-                    TSMAP[x] = cdate
-                if x not in RESMAP:
-                    (rc, so, se) = run_test(args.checkoutdir, args.testscript)
-                    RESMAP[x] = (rc, so, se)
-
-            print(RESMAP[x][0], x, TSMAP[x])
-
+    ab.print_status()
 
 if __name__ == '__main__':
     main()

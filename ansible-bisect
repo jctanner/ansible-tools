@@ -99,14 +99,18 @@ def get_commit_date(commitid, checkoutdir):
 
 def checkout_commit(checkoutdir, githash):
 
+    print('\tcommit: %s' % githash)
+
     # checkout
     cmd = 'cd %s; git checkout %s' % (checkoutdir, githash)
     (rc, so, se) = run_command(cmd, capture=True)
+    print('\tcheckout: %s' % rc)
     assert rc == 0, "unable to checkout %s" % githash
 
     # update submodules
     cmd = 'cd %s; git submodule update --recursive' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
+    print('\tsubmod: %s' % rc)
     assert rc == 0, "unable to update submodules"
 
 def _get_hacking_dir(checkoutdir):
@@ -197,6 +201,7 @@ class AnsibleBisector(object):
     results = {}
     commits = []
     checkrc = 0
+    negative_test = False
     direction = 'backward'
     version_start = None
     version_stop = None
@@ -207,7 +212,7 @@ class AnsibleBisector(object):
     # JUST FOR TESTING
     tcommits = None
     expected = None
- 
+
 
     def __init__(self, commits, **kwargs):
         self.expected = None
@@ -235,6 +240,16 @@ class AnsibleBisector(object):
                 rc = self.results.get(x, {}).get('rc', None)
                 print('%s %s %s' % (idx, x, rc))
 
+    def get_untested_count(self):
+        if self.marker:
+            choices = []
+            for idx,x in enumerate(self.commits):
+                if idx >= self.marker and x not in self.results:
+                    choices.append(x)
+        else:
+            choices = [x for x in self.commits if x not in self.results]
+
+        return len(choices)
 
     def get_bisected_commit(self):
         # we should have a marker at this point
@@ -274,7 +289,12 @@ class AnsibleBisector(object):
                 next_index = self.marker + 1
             else:
                 next_index = 0
-            next_commit = self.commits[next_index]
+
+            try:
+                next_commit = self.commits[next_index]
+            except IndexError as e:
+                print('WARNING: ran out of commits')
+                return None
 
             if next_commit not in self.results:
                 self.current_index = next_index
@@ -334,6 +354,17 @@ class AnsibleBisector(object):
         # move the marker
         self.set_current_index()
 
+    def matches(self, rc):
+        '''Need to handle negative testing'''
+        if not self.negative_test and rc == self.checkrc:
+            return True
+        elif not self.negative_test and rc != self.checkrc:
+            return False
+        elif self.negative_test and rc == self.checkrc:
+            return False
+        elif self.negative_test and rc != self.checkrc:
+            return True
+
     def set_current_index(self):
         last_index = self.current_index
         last_commit = self.commits[last_index]
@@ -341,7 +372,8 @@ class AnsibleBisector(object):
         last_so = self.results[last_commit]['so']
         last_se = self.results[last_commit]['se']
 
-        if last_rc == self.checkrc:
+        #if last_rc == self.checkrc:
+        if self.matches(last_rc):
             # move forward if marker is greater
             if self.marker == None:
                 self.marker = last_index
@@ -388,10 +420,10 @@ def main():
     if args.version_stop:
         args.version_stop = LooseVersion(args.version_stop)
     if args.checkrc.startswith('!'):
-        REVERSE_CHECKOP = True
+        negative_test = True
         args.checkrc = int(args.checkrc.replace('!', ''))
     else:
-        REVERSE_CHECKOP = False
+        negative_test = False
         args.checkrc = int(args.checkrc)
 
     # what is the primary branch?
@@ -400,6 +432,7 @@ def main():
         cbranch = 'HEAD'
 
     # reset the checkout
+    print('Resetting branch')
     checkout_commit(args.checkoutdir, cbranch)
 
     # get all known commits
@@ -412,12 +445,19 @@ def main():
         print('Total commits after slicing: %s' % len(commits))
 
     # reverse list if direction should be forward
-    if args.direction == 'backward':
+    if args.direction == 'forward':
         commits = [x for x in reversed(commits)]
 
+    # mapping of commits to their timestamps
+    TSMAP = {}
+
     ab = AnsibleBisector(commits)
+    ab.negative_test = negative_test
     tc = ab.get_commit_to_test()
     while tc:
+
+        print('COMMIT: %s (%s)' % (tc, ab.get_untested_count()))
+
         # get rid of previous remnants
         clean_checkout(args.checkoutdir)
 
@@ -456,10 +496,17 @@ def main():
 
         # run the test
         (rc, so, se) = run_test(args.checkoutdir, args.testscript)
+        print('\trc: %s' % rc)
+        #if rc != 0:
+        #    sys.exit(1)
         ab.set_result(tc, rc, so, se)
         tc = ab.get_commit_to_test()
 
-    ab.print_status()
+    #ab.print_status()
+    bisected_commit = ab.get_bisected_commit()
+    print('########################################')
+    print('# BISECTED: %s' % bisected_commit)
+    print('########################################')
 
 if __name__ == '__main__':
     main()

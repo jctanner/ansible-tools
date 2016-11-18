@@ -203,7 +203,11 @@ class AnsibleBisector(object):
     date_start = None
     date_stop = None
     marker = None
+
+    # JUST FOR TESTING
+    tcommits = None
     expected = None
+ 
 
     def __init__(self, commits, **kwargs):
         self.expected = None
@@ -212,9 +216,9 @@ class AnsibleBisector(object):
         self.current_index = None
 
     def print_status(self):
-        if self.marker:
+        if self.marker != None:
             for idx,x in enumerate(self.commits):
-                if idx <= (self.marker - 10) or idx >= (self.marker + 10):
+                if idx <= (self.marker - 100) or idx >= (self.marker + 100):
                     continue
 
                 rc = self.results.get(x, {}).get('rc', None)
@@ -222,6 +226,8 @@ class AnsibleBisector(object):
                     print('%s %s %s <-- marker' % (idx, x, rc))
                 elif idx == self.current_index:
                     print('%s %s %s <-- current' % (idx, x, rc))
+                elif self.commits[idx] == self.expected:
+                    print('%s %s %s <-- expected' % (idx, x, rc))
                 else:
                     print('%s %s %s' % (idx, x, rc))
         else:
@@ -232,22 +238,19 @@ class AnsibleBisector(object):
 
     def get_bisected_commit(self):
         # we should have a marker at this point
-        if not self.marker:
+        if self.marker == None:
+            import epdb; epdb.st()
             return None
 
-        a = self.commits[self.marker-1]
-        b = self.commits[self.marker]
-        c = self.commits[self.marker+1]
+        a = self.commits[self.marker]
+        b = self.commits[self.marker+1]
 
-        if not b in self.results or c not in self.results:
-            import epdb; epdb.st()
-
-        if self.results[b]['rc'] == self.checkrc and self.results[c]['rc'] != self.checkrc:
+        if self.results[a]['rc'] == self.checkrc and self.results[b]['rc'] != self.checkrc:
             #self.print_status()
-            if self.expected and c != self.expected:
+            if self.expected and b != self.expected:
                 self.print_status()
                 import epdb; epdb.st()
-            return c
+            return b
         else:
             import epdb; epdb.st()
 
@@ -256,10 +259,6 @@ class AnsibleBisector(object):
         # start at the middle
         if not self.current_index:
             self.current_index = len(self.commits) / 2
-            #self.current_index = (len(self.commits) - 1) / 2
-
-        #if self.current_index > len(self.commits) - 1:
-        #    import epdb; epdb.st()
 
         try:
             chash = self.commits[self.current_index]
@@ -271,7 +270,7 @@ class AnsibleBisector(object):
 
         if chash in self.results:
             # looped back to a tested commit
-            if self.marker:
+            if self.marker != None:
                 next_index = self.marker + 1
             else:
                 next_index = 0
@@ -280,6 +279,8 @@ class AnsibleBisector(object):
             if next_commit not in self.results:
                 self.current_index = next_index
                 return self.commits[self.current_index]
+            elif self.marker == None:
+                import epdb; epdb.st()
             else:
                 # No more to test...
                 return None
@@ -293,7 +294,7 @@ class AnsibleBisector(object):
 
         # need to move the marker back one if it's greater than this index
         cindex = self.commits.index(commit)
-        if self.marker and self.marker > cindex:
+        if self.marker != None and self.marker > cindex:
             self.marker -= 1
 
         # iterate to the next testable commit index
@@ -305,7 +306,7 @@ class AnsibleBisector(object):
 
         if nindex > len(self.commits) - 1:
             # went over the size of the list, need to go backwards
-            if self.marker:
+            if self.marker != None:
                 nindex = self.marker - 1
             else:
                 nindex = 0
@@ -342,19 +343,21 @@ class AnsibleBisector(object):
 
         if last_rc == self.checkrc:
             # move forward if marker is greater
-            if last_index > self.marker:
+            if self.marker == None:
+                self.marker = last_index
+            elif last_index > self.marker:
                 self.marker = last_index
             choices = self.commits[last_index:]
             new_index = len(choices) / 2
             self.current_index = last_index + new_index
         else:
             # move backward
-            if self.marker:
+            if self.marker != None:
                 choices = self.commits[self.marker:last_index]
             else:
                 choices = self.commits[:last_index]
             new_index = len(choices) / 2
-            if self.marker:
+            if self.marker != None:
                 self.current_index = self.marker + new_index
             else:
                 self.current_index = new_index

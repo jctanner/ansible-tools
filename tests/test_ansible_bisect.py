@@ -85,7 +85,7 @@ class TestAnsibleBisector(unittest.TestCase):
             if bci != marker:
                 testcommits[bci][2] = False
 
-        import pprint; pprint.pprint(testcommits)
+        #import pprint; pprint.pprint(testcommits)
 
         # create the bisector
         ab = AnsibleBisector([x[0] for x in testcommits])
@@ -104,10 +104,10 @@ class TestAnsibleBisector(unittest.TestCase):
 
             tc = ab.get_commit_to_test()
 
-        ab.print_status()
+        #ab.print_status()
         bisected_commit = ab.get_bisected_commit()
-        print("EXPECTED: %s" % bad_commit)
-        print("BISECTED: %s" % bisected_commit)
+        #print("EXPECTED: %s" % bad_commit)
+        #print("BISECTED: %s" % bisected_commit)
         if bad_commit != bisected_commit:
             import epdb; epdb.st()
         assert bisected_commit == bad_commit, "bisected wrong commit"
@@ -147,14 +147,14 @@ class TestAnsibleBisector(unittest.TestCase):
     def test_basic_random_iterations_with_skip(self):
         print('')
 
-        for i in xrange(0, 5):
+        for i in xrange(0, 100):
 
             # make a randomly sized list of commits
             total = random.randrange(10, 2000)
             testcommits = [[str(uuid.uuid4()), 0, True] for x in xrange(0,total)]
 
             # set a random marker
-            marker = random.randrange(0, len(testcommits))
+            marker = random.randrange(1, len(testcommits))
             bad_commit = testcommits[marker][0]
 
             # change the rc for all commits starting at the marker
@@ -163,6 +163,8 @@ class TestAnsibleBisector(unittest.TestCase):
                     testcommits[idx][1] = 1
 
             ab = AnsibleBisector([x[0] for x in testcommits])
+            ab.expected = bad_commit
+            ab.tcommits = testcommits
 
             # get the first test
             tc = ab.get_commit_to_test()
@@ -179,7 +181,11 @@ class TestAnsibleBisector(unittest.TestCase):
                 tc = ab.get_commit_to_test()
 
             bisected_commit = ab.get_bisected_commit()
-            #print("EXPECTED: %s" % bad_commit)
-            #print("BISECTED: %s" % bisected_commit)
+
+            #if bisected_commit != bad_commit:
+            #    ab.print_status()
+
+            #print("\tEXPECTED: %s" % bad_commit)
+            #print("\tBISECTED: %s" % bisected_commit)
             assert bisected_commit == bad_commit, "bisected wrong commit"
 

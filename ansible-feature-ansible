@@ -29,6 +29,9 @@ else
     #git push origin $BRANCH
 fi
 
+# submodules are gone, yay!
+exit 0
+
 # get core
 echo "Checking out core modules"
 cd $TOPDIR/ansible/lib/ansible/modules/core

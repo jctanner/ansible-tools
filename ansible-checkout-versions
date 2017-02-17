@@ -1,5 +1,54 @@
-#!/bin/bash
+#!/usr/bin/env python
 
+import os
+import shutil
+import subprocess
+
+
+def run_command(args):
+    p = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True
+    )
+    (so, se) = p.communicate()
+    return (p.returncode, so, se)
+
+
+def main():
+
+    CACHEDIR = "/var/cache/ansible/ansible.checkout.clean"
+    BASEDIR = "/var/cache/ansible/version_checkouts"
+
+    (rc, so, se) = run_command('ansible-list-versions')
+    VERSIONS = [x.strip() for x in so.split('\n')
+                if x.strip() and 'devel' not in x]
+
+    for V in VERSIONS:
+        dstdir = os.path.join(BASEDIR, 'ansible.%s' % V)
+        if not os.path.isdir(dstdir):
+            shutil.copytree(CACHEDIR,dstdir)
+        cmd = 'cd %s; git checkout -f tags/%s' % (dstdir, V)
+        (rc, so, se) = run_command(cmd)
+
+        # any submodules?
+        gmfile = os.path.join(dstdir, '.gitmodules')
+        if os.path.isfile(gmfile):
+            coredir = os.path.join(dstdir, 'lib/ansible/modules/core')
+            if not os.path.isdir(coredir):
+                continue
+            sysdir = os.path.join(coredir, 'system')
+            if os.path.isdir(sysdir):
+                continue
+            #import epdb; epdb.st()
+            cmd = 'cd %s; git submodule update --init --recursive' % dstdir
+            (rc, so, se) = run_command(cmd)
+            #import epdb; epdb.st()
+
+
+
+'''
 CWD=$(pwd)
 VERSIONS=$(ansible-list-versions)
 CACHEDIR=/var/cache/ansible/ansible.checkout.clean
@@ -10,38 +59,74 @@ if [ ! -d $BASEDIR ]; then
 fi
 
 for VERSION in $VERSIONS; do
-    echo $VERSION
+
+    cd $BASEDIR
 
     if [[ $VERSION != "devel"* ]]; then
 
+        # https://github.com/ansible/ansible/archive/v1.9.2-0.1.rc1.tar.gz
+
         # git checkout tags/<tag_name>
         CHECKOUTDIR="$BASEDIR/ansible.$VERSION"
-        if [ ! -d $CHECKOUTDIR ]; then
-            cp -Rp $CACHEDIR $CHECKOUTDIR
-            cd $CHECKOUTDIR
 
-            # submodules start at v1.8.0
-            if [[ $VERSION < v1.8.0 ]]; then
-                echo "## deleting submodules ..."
-                rm -rf rm -rf lib/ansible/modules/*
-            fi
-            
-            echo "## checking out tag ..."
-            git checkout tags/$VERSION
-            RC=$?
-            if [[ $RC != 0 ]]; then
-                exit $RC
-            fi
+        #echo $CHECKOUTDIR
 
-            if [[ $VERSION > v1.7.2 ]]; then
-                echo "## updating submodules ..."
-                git submodule update
-                RC=$?
-                if [[ $RC != 0 ]]; then
-                    exit $RC
-                fi
-            fi            
+        TARFILE="$VERSION.tar.gz"
+        TARFILEPATH="$BASEDIR/$TARFILE"
+        TARURL="https://github.com/ansible/ansible/archive/$TARFILE"
+
+        #echo $TARFILE
+        #echo $TARFILEPATH
+        #echo $TARURL
+
+        if [[ ! -f $TARFILEPATH ]]; then
+            wget -O $TARFILEPATH $TARURL
         fi
-    fi 
+
+        if [[ ! -d $CHECKOUTDIR ]]; then
+            mkdir $CHECKOUTDIR
+            cd $CHECKOUTDIR
+            tar xzvf $TARFILEPATH --strip 1
+        fi
+
+        #if [[ $VERSION > v1.7.2 ]]; then
+        #    if [ ! -d $CHECKOUDIR/lib/ansible/modules/core/system ]; then
+        #        rm -rf $CHECKOUTDIR
+        #    fi
+        #fi
+
+        #if [ ! -d $CHECKOUTDIR ]; then
+        #    cp -Rp $CACHEDIR $CHECKOUTDIR
+        #    cd $CHECKOUTDIR
+
+        #    # submodules start at v1.8.0
+        #    if [[ $VERSION < v1.8.0 ]]; then
+        #        echo "## deleting submodules ..."
+        #        rm -rf rm -rf lib/ansible/modules/*
+        #    fi
+
+        #    echo "## checking out tag ..."
+        #    git checkout tags/$VERSION
+        #    RC=$?
+        #    if [[ $RC != 0 ]]; then
+        #        exit $RC
+        #    fi
+
+        #    if [[ $VERSION > v1.7.2 ]]; then
+        #        echo "## updating submodules ..."
+        #        git submodule update --init
+        #        RC=$?
+        #        if [[ $RC != 0 ]]; then
+        #            exit $RC
+        #        fi
+        #    fi
+        #fi
+
+    fi
     cd $CWD
 done
+'''
+
+
+if __name__ == "__main__":
+    main()

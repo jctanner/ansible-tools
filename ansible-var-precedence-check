@@ -48,31 +48,38 @@
 #    19. role_parent_default
 #    20. role_default
 
+import json
 import os
 import sys
 import shutil
+import stat
 import subprocess
 import tempfile
 from pprint import pprint
 from optparse import OptionParser
+from jinja2 import Environment
 
+ENV = Environment()
 TESTDIR = tempfile.mkdtemp()
+
 
 def run_command(args, cwd=None):
     p = subprocess.Popen(
-            args, 
-            stderr=subprocess.PIPE, 
-            stdout=subprocess.PIPE, 
+            args,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
             shell=True,
             cwd=cwd
         )
     (so, se) = p.communicate()
     return (p.returncode, so, se)
 
+
 def clean_test_dir():
     if os.path.isdir(TESTDIR):
         shutil.rmtree(TESTDIR)
     os.makedirs(TESTDIR)
+
 
 class Role(object):
     def __init__(self, name):
@@ -108,24 +115,108 @@ class Role(object):
                 f.write('findme: %s\n' % self.name)
 
         if self.dependencies:
-            fpath = os.path.join(TESTDIR, 'roles', self.name, 'meta') 
+            fpath = os.path.join(TESTDIR, 'roles', self.name, 'meta')
             if not os.path.isdir(fpath):
                 os.makedirs(fpath)
             fname = os.path.join(fpath, 'main.yml')
             with open(fname, 'wb') as f:
                 f.write('dependencies:\n')
                 for dep in self.dependencies:
-                    f.write('- { role: %s }\n' % dep)                    
+                    f.write('- { role: %s }\n' % dep)
             #import epdb; epdb.st()
 
-class VarTestMaker(object):
+
+class DynamicInventory(object):
+    BASESCRIPT = '''#!/usr/bin/python
+import json
+data = """{{ data }}"""
+data = json.loads(data)
+print(json.dumps(data, indent=2, sort_keys=True))
+'''
+
+    BASEINV = {
+        '_meta': {
+            'hostvars': {
+                'testhost': {}
+            }
+        }
+    }
+
     def __init__(self, features):
+        self.ENV = Environment()
+        self.features = features
+        self.fpath = None
+        self.inventory = self.BASEINV.copy()
+        #print('###########################################')
+        #pprint(self.inventory)
+        #print('###########################################')
+        self.build()
+
+    def build(self):
+        xhost = 'testhost'
+        if 'script_host' in self.features:
+            #print([x for x in self.features if 'script' in x])
+            self.inventory['_meta']['hostvars'][xhost]['findme'] = 'script_host'
+        else:
+            self.inventory['_meta']['hostvars'][xhost] = {}
+
+        if 'script_child' in self.features:
+            self.inventory['child'] = {
+                'hosts': [xhost],
+                'vars': {'findme': 'script_child'}
+            }
+
+        if 'script_parent' in self.features:
+
+            self.inventory['parent'] = {
+                'vars': {'findme': 'script_parent'}
+            }
+
+            if 'script_child' in self.features:
+                self.inventory['parent']['children'] = ['child']
+            else:
+                self.inventory['parent']['hosts'] = [xhost]
+
+        if 'script_all' in self.features:
+            self.inventory['all'] = {
+                'hosts': [xhost],
+                'vars': {
+                    'findme': 'script_all'
+                },
+            }
+        else:
+            self.inventory['all'] = {
+                'hosts': [xhost],
+            }
+
+        #import epdb; epdb.st()
+
+    def write_script(self):
+        fdir = os.path.join(TESTDIR, 'inventory')
+        if not os.path.isdir(fdir):
+            os.makedirs(fdir)
+        fpath = os.path.join(fdir, 'hosts')
+        self.fpath = fpath
+
+        data = json.dumps(self.inventory)
+        t = self.ENV.from_string(self.BASESCRIPT)
+        fdata = t.render(data=data)
+        with open(fpath, 'wb') as f:
+            f.write(fdata)
+        st = os.stat(fpath)
+        os.chmod(fpath, st.st_mode | stat.S_IEXEC)
+
+
+class VarTestMaker(object):
+    def __init__(self, features, dynamic_inventory=False):
         clean_test_dir()
+        self.dynamic_inventory = dynamic_inventory
+        self.di = None
         self.features = features
         self.inventory = ''
         self.playvars = []
         self.varsfiles = []
-        self.playbook =  '- hosts: testhost\n'
+        self.playbook = '- hosts: testhost\n'
         self.playbook += '  gather_facts: False\n'
         self.tasks = []
         self.roles = []
@@ -143,87 +234,93 @@ class VarTestMaker(object):
                 for vf in self.varsfiles:
                     f.write('    - %s\n' % vf)
             if self.roles:
-                f.write(    '  roles:\n')
+                f.write('  roles:\n')
                 for role in self.roles:
                     #print("writing %s" % role.name)
                     role.write_role()
                     if role.load:
                         f.write('    - %s\n' % role.name)
             if self.tasks:
-                f.write(    '  tasks:\n')
+                f.write('  tasks:\n')
                 for task in self.tasks:
                     f.write('    - %s\n' % task)
 
     def run(self):
 
-        if 'ini_host' in self.features:
-            self.inventory += 'testhost findme=ini_host\n'            
+        if self.dynamic_inventory:
+            # python based inventory file
+            self.di = DynamicInventory(self.features)
+            self.di.write_script()
         else:
-            self.inventory += 'testhost\n'            
-        self.inventory += '\n'
-
-        if 'ini_child' in self.features:
-            self.inventory += '[child]\n'
-            self.inventory += 'testhost\n' 
-            self.inventory += '\n'
-            self.inventory += '[child:vars]\n'
-            self.inventory += 'findme=ini_child\n'
-            self.inventory += '\n'
-
-        if 'ini_parent' in self.features:
-            if 'ini_child' in self.features:
-                self.inventory += '[parent:children]\n'
-                self.inventory += 'child\n'
+            # ini based inventory file
+            if 'ini_host' in self.features:
+                self.inventory += 'testhost findme=ini_host\n'
             else:
-                self.inventory += '[parent]\n'
                 self.inventory += 'testhost\n'
             self.inventory += '\n'
-            self.inventory += '[parent:vars]\n'
-            self.inventory += 'findme=ini_parent\n'
-            self.inventory += '\n'
 
-        if 'ini_all' in self.features:
-            self.inventory += '[all:vars]\n'
-            self.inventory += 'findme=ini_all\n'
-            self.inventory += '\n'
+            if 'ini_child' in self.features:
+                self.inventory += '[child]\n'
+                self.inventory += 'testhost\n'
+                self.inventory += '\n'
+                self.inventory += '[child:vars]\n'
+                self.inventory += 'findme=ini_child\n'
+                self.inventory += '\n'
 
-        # default to a single file called inventory
-        invfile = os.path.join(TESTDIR, 'inventory', 'hosts')
-        ipath = os.path.join(TESTDIR, 'inventory')
-        if not os.path.isdir(ipath):
-            os.makedirs(ipath)
-        hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
-        if not os.path.isdir(hpath):
-            os.makedirs(hpath)
-        gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
-        if not os.path.isdir(gpath):
-            os.makedirs(gpath)
+            if 'ini_parent' in self.features:
+                if 'ini_child' in self.features:
+                    self.inventory += '[parent:children]\n'
+                    self.inventory += 'child\n'
+                else:
+                    self.inventory += '[parent]\n'
+                    self.inventory += 'testhost\n'
+                self.inventory += '\n'
+                self.inventory += '[parent:vars]\n'
+                self.inventory += 'findme=ini_parent\n'
+                self.inventory += '\n'
+
+            if 'ini_all' in self.features:
+                self.inventory += '[all:vars]\n'
+                self.inventory += 'findme=ini_all\n'
+                self.inventory += '\n'
+
+            # default to a single file called inventory
+            invfile = os.path.join(TESTDIR, 'inventory', 'hosts')
+            ipath = os.path.join(TESTDIR, 'inventory')
+            if not os.path.isdir(ipath):
+                os.makedirs(ipath)
+            hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
+            if not os.path.isdir(hpath):
+                os.makedirs(hpath)
+            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+            if not os.path.isdir(gpath):
+                os.makedirs(gpath)
+
+            with open(invfile, 'wb') as f:
+                f.write(self.inventory)
 
         if 'ini_host_vars_file' in self.features:
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_host_vars_file\n')
-        
+
         if 'ini_group_vars_file_all' in self.features:
-            gfile = os.path.join(gpath, 'all')
+            #gfile = os.path.join(gpath, 'all')
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_all\n')
 
         if 'ini_group_vars_file_child' in self.features:
-            gfile = os.path.join(gpath, 'child')
+            #gfile = os.path.join(gpath, 'child')
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_child\n')
-        
+
         if 'ini_group_vars_file_parent' in self.features:
-            gfile = os.path.join(gpath, 'child')
+            #gfile = os.path.join(gpath, 'child')
             hfile = os.path.join(hpath, 'testhost')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_parent\n')
-
-        with open(invfile, 'wb') as f:
-            f.write(self.inventory)
 
         if 'pb_host_vars_file' in self.features:
             os.makedirs(os.path.join(TESTDIR, 'host_vars'))
@@ -293,7 +390,7 @@ class VarTestMaker(object):
                 role.defaults = True
                 role.load = True
                 self.roles.append(role)
-        
+
         #print(self.features)
         #pprint([(x.name,x.load) for x in self.roles])
 
@@ -323,16 +420,16 @@ class VarTestMaker(object):
 
 
 def main():
-    results = []
-    features = ['ini_host', 
-                'ini_child', 
+    #results = []
+    features = ['ini_host',
+                'ini_child',
                 'ini_parent',
                 'ini_all',
                 'ini_host_vars_file',
                 'ini_group_vars_file_parent',
                 'ini_group_vars_file_child',
                 'ini_group_vars_file_all',
-                'pb_group_vars_file_parent', 
+                'pb_group_vars_file_parent',
                 'pb_group_vars_file_child',
                 'pb_group_vars_file_all',
                 'pb_host_vars_file',
@@ -347,6 +444,7 @@ def main():
 
     parser = OptionParser()
     parser.add_option('-f', '--feature', action='append')
+    parser.add_option('--use_dynamic_inventory', action='store_true')
     (options, args) = parser.parse_args()
 
     if options.feature:
@@ -356,18 +454,20 @@ def main():
                 sys.exit(1)
         features = [x for x in options.feature]
 
-    print("TOTAL: %s" % len(features))
-
     fdesc = {
-        'ini_host': 'host var inside the ini', 
-        'ini_child': 'child group var inside the ini', 
+        'ini_host': 'host var inside the ini',
+        'script_host': 'host var inside the script _meta',
+        'ini_child': 'child group var inside the ini',
+        'script_child': 'child group var inside the script',
         'ini_parent': 'parent group var inside the ini',
+        'script_parent': 'parent group var inside the script',
         'ini_all': 'all group var inside the ini',
+        'script_all': 'all group var inside the script',
         'ini_host_vars_file': 'var in inventory/host_vars/host',
         'ini_group_vars_file_parent': 'var in inventory/group_vars/parent',
         'ini_group_vars_file_child': 'var in inventory/group_vars/child',
         'ini_group_vars_file_all': 'var in inventory/group_vars/all',
-        'pb_group_vars_file_parent': 'var in playbook/group_vars/parent', 
+        'pb_group_vars_file_parent': 'var in playbook/group_vars/parent',
         'pb_group_vars_file_child': 'var in playbook/group_vars/child',
         'pb_group_vars_file_all': 'var in playbook/group_vars/all',
         'pb_host_vars_file': 'var in playbook/host_vars/host',
@@ -381,11 +481,24 @@ def main():
         'extra_vars': 'var passed via the cli'
     }
 
+    dinv = options.use_dynamic_inventory
+    if dinv:
+        for idx,x in enumerate(features):
+            if x.startswith('ini_'):
+                features[idx] = x.replace('ini_', 'script_')
+        for idx,x in enumerate(features):
+            if x.startswith('script_') and 'vars_file' in x:
+                features[idx] = ''
+        features = [x for x in features if x]
+
+    print("TOTAL: %s" % len(features))
+    dinv = options.use_dynamic_inventory
 
     last_removed = None
     index = 1
     while features:
-        res = VarTestMaker(features).run()
+        VTM = VarTestMaker(features, dynamic_inventory=dinv)
+        res = VTM.run()
         if not res or res == 'VARIABLE IS NOT DEFINED!':
             print("ERROR: %s" % res)
             print("tempdir: %s" % TESTDIR)
@@ -397,6 +510,7 @@ def main():
         try:
             features.remove(res)
         except Exception as e:
+            #import epdb; epdb.st()
             print("ERROR !!!")
             print(e)
             print('features: %s' % features)
@@ -409,4 +523,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

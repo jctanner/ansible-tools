@@ -196,13 +196,14 @@ print(json.dumps(data, indent=2, sort_keys=True))
         if not os.path.isdir(fdir):
             os.makedirs(fdir)
         fpath = os.path.join(fdir, 'hosts')
+        #fpath = os.path.join(TESTDIR, 'inventory')
         self.fpath = fpath
 
         data = json.dumps(self.inventory)
         t = self.ENV.from_string(self.BASESCRIPT)
         fdata = t.render(data=data)
         with open(fpath, 'wb') as f:
-            f.write(fdata)
+            f.write(fdata + '\n')
         st = os.stat(fpath)
         os.chmod(fpath, st.st_mode | stat.S_IEXEC)
 
@@ -245,7 +246,7 @@ class VarTestMaker(object):
                 for task in self.tasks:
                     f.write('    - %s\n' % task)
 
-    def run(self):
+    def build(self):
 
         if self.dynamic_inventory:
             # python based inventory file
@@ -289,15 +290,16 @@ class VarTestMaker(object):
             ipath = os.path.join(TESTDIR, 'inventory')
             if not os.path.isdir(ipath):
                 os.makedirs(ipath)
-            hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
-            if not os.path.isdir(hpath):
-                os.makedirs(hpath)
-            gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
-            if not os.path.isdir(gpath):
-                os.makedirs(gpath)
 
             with open(invfile, 'wb') as f:
                 f.write(self.inventory)
+
+        hpath = os.path.join(TESTDIR, 'inventory', 'host_vars')
+        if not os.path.isdir(hpath):
+            os.makedirs(hpath)
+        gpath = os.path.join(TESTDIR, 'inventory', 'group_vars')
+        if not os.path.isdir(gpath):
+            os.makedirs(gpath)
 
         if 'ini_host_vars_file' in self.features:
             hfile = os.path.join(hpath, 'testhost')
@@ -397,9 +399,17 @@ class VarTestMaker(object):
         self.tasks.append('debug: var=findme')
         self.write_playbook()
 
+    def run(self):
+        '''
+        if self.dynamic_inventory:
+            cmd = 'ansible-playbook -c local -i inventory/hosts site.yml'
+        else:
+            cmd = 'ansible-playbook -c local -i inventory site.yml'
+        '''
         cmd = 'ansible-playbook -c local -i inventory site.yml'
         if 'extra_vars' in self.features:
             cmd += ' --extra-vars="findme=extra_vars"'
+        #print(cmd)
         (rc, so, se) = run_command(cmd, cwd=TESTDIR)
 
         if rc == 0:
@@ -418,6 +428,13 @@ class VarTestMaker(object):
             sys.exit(1)
             return False
 
+    def show_tree(self):
+        cmd = 'tree %s' % TESTDIR
+        (rc, so, se) = run_command(cmd)
+        lines = so.split('\n')
+        lines = lines[:-3]
+        print('\n'.join(lines))
+        #import epdb; epdb.st()
 
 def main():
     #results = []
@@ -445,6 +462,7 @@ def main():
     parser = OptionParser()
     parser.add_option('-f', '--feature', action='append')
     parser.add_option('--use_dynamic_inventory', action='store_true')
+    parser.add_option('--show_tree', action='store_true')
     (options, args) = parser.parse_args()
 
     if options.feature:
@@ -472,8 +490,8 @@ def main():
         'pb_group_vars_file_all': 'var in playbook/group_vars/all',
         'pb_host_vars_file': 'var in playbook/host_vars/host',
         'play_var': 'var set in playbook header',
-        'role_parent_default': 'var in roles/role_parent/vars/defaults',
-        'role_default': 'var in roles/role/vars/defaults',
+        'role_parent_default': 'var in roles/role_parent/defaults/main.yml',
+        'role_default': 'var in roles/role/defaults/main.yml',
         'role_var': 'var in ???',
         'include_vars': 'var in included file',
         'set_fact': 'var made by set_fact',
@@ -484,12 +502,12 @@ def main():
     dinv = options.use_dynamic_inventory
     if dinv:
         for idx,x in enumerate(features):
-            if x.startswith('ini_'):
+            if x.startswith('ini_') and not 'vars_file' in x:
                 features[idx] = x.replace('ini_', 'script_')
-        for idx,x in enumerate(features):
-            if x.startswith('script_') and 'vars_file' in x:
-                features[idx] = ''
-        features = [x for x in features if x]
+        #for idx,x in enumerate(features):
+        #    if x.startswith('script_') and 'vars_file' in x:
+        #        features[idx] = ''
+        #features = [x for x in features if x]
 
     print("TOTAL: %s" % len(features))
     dinv = options.use_dynamic_inventory
@@ -498,6 +516,11 @@ def main():
     index = 1
     while features:
         VTM = VarTestMaker(features, dynamic_inventory=dinv)
+        VTM.build()
+
+        if options.show_tree:
+            VTM.show_tree()
+
         res = VTM.run()
         if not res or res == 'VARIABLE IS NOT DEFINED!':
             print("ERROR: %s" % res)
@@ -519,7 +542,7 @@ def main():
         last_removed = res
         index += 1
 
-    shutil.rmtree(TESTDIR)
+        #shutil.rmtree(TESTDIR)
 
 if __name__ == "__main__":
     main()

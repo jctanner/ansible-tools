@@ -224,6 +224,8 @@ class VarTestMaker(object):
         self.playbook += '  gather_facts: False\n'
         self.tasks = []
         self.roles = []
+        self.ansible_command = None
+        self.stdout = None
 
     def write_playbook(self):
         fname = os.path.join(TESTDIR, 'site.yml')
@@ -412,8 +414,9 @@ class VarTestMaker(object):
         cmd = 'ansible-playbook -c local -i inventory site.yml'
         if 'extra_vars' in self.features:
             cmd += ' --extra-vars="findme=extra_vars"'
-        #print(cmd)
+        self.ansible_command = cmd
         (rc, so, se) = run_command(cmd, cwd=TESTDIR)
+        self.stdout = so
 
         if rc == 0:
             val = None
@@ -432,6 +435,7 @@ class VarTestMaker(object):
             return False
 
     def show_tree(self):
+        print('## TREE')
         cmd = 'tree %s' % TESTDIR
         (rc, so, se) = run_command(cmd)
         lines = so.split('\n')
@@ -440,10 +444,17 @@ class VarTestMaker(object):
         #import epdb; epdb.st()
 
     def show_content(self):
+        print('## CONTENT')
         cmd = 'find %s -type f | xargs tail -n +1' % TESTDIR
         (rc, so, se) = run_command(cmd)
         print(so)
         #import epdb; epdb.st()
+
+    def show_stdout(self):
+        print('## COMMAND')
+        print(self.ansible_command)
+        print('## STDOUT')
+        print(self.stdout)
 
 
 def main():
@@ -474,6 +485,7 @@ def main():
     parser.add_option('--use_dynamic_inventory', action='store_true')
     parser.add_option('--show_tree', action='store_true')
     parser.add_option('--show_content', action='store_true')
+    parser.add_option('--show_stdout', action='store_true')
     (options, args) = parser.parse_args()
 
     if options.feature:
@@ -526,7 +538,7 @@ def main():
         VTM = VarTestMaker(features, dynamic_inventory=dinv)
         VTM.build()
 
-        if options.show_tree or options.show_content:
+        if options.show_tree or options.show_content or options.show_stdout:
             print('')
 
         if options.show_tree:
@@ -536,6 +548,10 @@ def main():
             VTM.show_content()
 
         res = VTM.run()
+
+        if options.show_stdout:
+            VTM.show_stdout()
+
         if not res or res == 'VARIABLE IS NOT DEFINED!':
             print("ERROR: %s" % res)
             print("tempdir: %s" % TESTDIR)

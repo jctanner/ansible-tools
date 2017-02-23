@@ -26,6 +26,9 @@
 
 # https://github.com/ansible/ansible/blob/devel/test/integration/test_var_precedence.yml
 
+# bcoca [3:25 PM]
+# that looks wrong, ini < pb
+
 # bcoca's version ...
 #    1. extra_vars
 #    2. set_fact
@@ -436,6 +439,13 @@ class VarTestMaker(object):
         print('\n'.join(lines))
         #import epdb; epdb.st()
 
+    def show_content(self):
+        cmd = 'find %s -type f | xargs tail -n +1' % TESTDIR
+        (rc, so, se) = run_command(cmd)
+        print(so)
+        #import epdb; epdb.st()
+
+
 def main():
     #results = []
     features = ['ini_host',
@@ -463,6 +473,7 @@ def main():
     parser.add_option('-f', '--feature', action='append')
     parser.add_option('--use_dynamic_inventory', action='store_true')
     parser.add_option('--show_tree', action='store_true')
+    parser.add_option('--show_content', action='store_true')
     (options, args) = parser.parse_args()
 
     if options.feature:
@@ -501,13 +512,10 @@ def main():
 
     dinv = options.use_dynamic_inventory
     if dinv:
+        # some features are specific to ini, so swap those
         for idx,x in enumerate(features):
-            if x.startswith('ini_') and not 'vars_file' in x:
+            if x.startswith('ini_') and 'vars_file' not in x:
                 features[idx] = x.replace('ini_', 'script_')
-        #for idx,x in enumerate(features):
-        #    if x.startswith('script_') and 'vars_file' in x:
-        #        features[idx] = ''
-        #features = [x for x in features if x]
 
     print("TOTAL: %s" % len(features))
     dinv = options.use_dynamic_inventory
@@ -518,8 +526,14 @@ def main():
         VTM = VarTestMaker(features, dynamic_inventory=dinv)
         VTM.build()
 
+        if options.show_tree or options.show_content:
+            print('')
+
         if options.show_tree:
             VTM.show_tree()
+
+        if options.show_content:
+            VTM.show_content()
 
         res = VTM.run()
         if not res or res == 'VARIABLE IS NOT DEFINED!':
@@ -541,8 +555,7 @@ def main():
             sys.exit(1)
         last_removed = res
         index += 1
-
-        #shutil.rmtree(TESTDIR)
+        shutil.rmtree(TESTDIR)
 
 if __name__ == "__main__":
     main()

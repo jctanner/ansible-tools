@@ -3,8 +3,10 @@
 INVERSION=$1
 TESTSCRIPT=$2
 
+echo "# running ansible-checkout-versions ..."
 ansible-checkout-versions
 
+echo "# running ansible-list-versions ..."
 CWD=$(pwd)
 if [[ $INVERSION == "devel"* ]]; then
     VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
@@ -26,6 +28,7 @@ if [[ $VERSION == "devel"* ]]; then
 else
     VERSIONDIR="$BASEDIR/ansible.$VERSION"
 fi
+echo "# running  $VERSIONDIR/hacking/env-setup ..."
 HACKING="$VERSIONDIR/hacking/env-setup"
 if [ -f $HACKING ]; then
     source $HACKING > /dev/null 2>&1

@@ -486,6 +486,7 @@ def main():
     parser.add_option('--show_tree', action='store_true')
     parser.add_option('--show_content', action='store_true')
     parser.add_option('--show_stdout', action='store_true')
+    parser.add_option('--copy_testcases_to_local_dir', action='store_true')
     (options, args) = parser.parse_args()
 
     if options.feature:
@@ -570,8 +571,24 @@ def main():
             print('res: %s' % res)
             sys.exit(1)
         last_removed = res
-        index += 1
+
+        if options.copy_testcases_to_local_dir:
+
+            topdir = 'testcases'
+
+            if index == 1 and os.path.isdir(topdir):
+                shutil.rmtree(topdir)
+
+            if not os.path.isdir(topdir):
+                os.makedirs(topdir)
+            thisindex = str(index)
+            if len(thisindex) == 1:
+                thisindex = '0' + thisindex
+            thisdir = os.path.join(topdir, '%s.%s' % (thisindex, res))
+            shutil.copytree(TESTDIR, thisdir)
+
         shutil.rmtree(TESTDIR)
+        index += 1
 
 if __name__ == "__main__":
     main()

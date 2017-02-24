@@ -249,7 +249,14 @@ class VarTestMaker(object):
             if self.tasks:
                 f.write('  tasks:\n')
                 for task in self.tasks:
-                    f.write('    - %s\n' % task)
+                    if isinstance(task, list):
+                        for idx,x in enumerate(task):
+                            if idx == 0:
+                                f.write('    - %s\n' % x)
+                            else:
+                                f.write('      %s\n' % x)
+                    else:
+                        f.write('    - %s\n' % task)
 
     def build(self):
 
@@ -398,10 +405,17 @@ class VarTestMaker(object):
                 role.load = True
                 self.roles.append(role)
 
-        #print(self.features)
-        #pprint([(x.name,x.load) for x in self.roles])
+        if 'task_vars' in self.features:
+            self.tasks.append(
+                [
+                    'debug: var=findme',
+                    'vars:',
+                    '   findme: "task_vars"'
+                ]
+            )
+        else:
+            self.tasks.append('debug: var=findme')
 
-        self.tasks.append('debug: var=findme')
         self.write_playbook()
 
     def run(self):
@@ -478,6 +492,7 @@ def main():
                 'include_vars',
                 'set_fact',
                 'vars_file',
+                'task_vars',
                 'extra_vars']
 
     parser = OptionParser()
@@ -520,6 +535,7 @@ def main():
         'include_vars': 'var in included file',
         'set_fact': 'var made by set_fact',
         'vars_file': 'var in file added by vars_file',
+        'task_vars': 'vars defined on the task',
         'extra_vars': 'var passed via the cli'
     }
 

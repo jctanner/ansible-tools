@@ -319,20 +319,17 @@ class VarTestMaker(object):
                 f.write('findme: ini_host_vars_file\n')
 
         if 'ini_group_vars_file_all' in self.features:
-            #gfile = os.path.join(gpath, 'all')
-            hfile = os.path.join(hpath, 'testhost')
+            hfile = os.path.join(gpath, 'all')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_all\n')
 
         if 'ini_group_vars_file_child' in self.features:
-            #gfile = os.path.join(gpath, 'child')
-            hfile = os.path.join(hpath, 'testhost')
+            hfile = os.path.join(gpath, 'child')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_child\n')
 
         if 'ini_group_vars_file_parent' in self.features:
-            #gfile = os.path.join(gpath, 'child')
-            hfile = os.path.join(hpath, 'testhost')
+            hfile = os.path.join(gpath, 'parent')
             with open(hfile, 'wb') as f:
                 f.write('findme: ini_group_vars_file_parent\n')
 

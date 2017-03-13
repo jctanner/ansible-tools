@@ -488,6 +488,7 @@ def main():
         aversion = LooseVersion(aversion)
         if args.version_start:
             if aversion < args.version_start:
+                print('\t%s < %s, skipping' % (aversion, args.version_start))
                 # remove the commit
                 ab.remove_commit(tc)
                 # get next commit

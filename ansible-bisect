@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# This bisection script helps isolate commits that changed a behavior of ansible.
+# This bisection script helps isolate commits that changed a behavior of ansible
 # To use it:
 #   1) check the --help output
 #   2) make an ansible checkout
@@ -20,6 +20,7 @@ DEVELDIR = "/var/cache/ansible/ansible.checkout.clean"
 BASEDIR = "/var/cache/ansible/version_checkouts"
 LOGFILE = "returncodes.txt"
 
+
 def run_command(args, capture=False, shell=True, cwd=None):
     if not capture:
         p = subprocess.Popen(args, shell=True, cwd=cwd)
@@ -30,10 +31,12 @@ def run_command(args, capture=False, shell=True, cwd=None):
     (so, se) = p.communicate()
     return (p.returncode, so, se)
 
+
 def clean_checkout(checkoutdir):
     '''Remove all .pyc files in a checkout'''
     cmd = 'find %s -type f -name "*.pyc" | xargs rm -f' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
+
 
 def get_commits(checkoutdir):
     cmd = 'cd %s; git log --pretty=oneline' % checkoutdir
@@ -44,6 +47,7 @@ def get_commits(checkoutdir):
     #import epdb; epdb.st()
     return commits
 
+
 def get_checkout_date(checkoutdir):
     xdate = None
     cmd = 'cd %s; git log -1 --pretty=fuller' % (checkoutdir)
@@ -52,12 +56,13 @@ def get_checkout_date(checkoutdir):
         if x.strip().lower().startswith('commitdate:'):
             # 'Date:   Fri Nov 11 12:48:45 2016 -0500'
             x = x.replace('CommitDate:', '', 1).strip()
-            xparts = x.split()
+            #xparts = x.split()
             x = x.split('-', 1)[0].strip()
             x = x.split('+', 1)[0].strip()
             xdate = datetime.datetime.strptime(x, "%a %b %d %H:%M:%S %Y")
             break
     return xdate
+
 
 def get_date_cache(cachedir='.cache'):
     chash = {}
@@ -74,6 +79,7 @@ def get_date_cache(cachedir='.cache'):
             import epdb; epdb.st()
     return chash
 
+
 def save_date_cache(chash, cachedir='.cache'):
     if not os.path.isdir(cachedir):
         os.makedirs(cachedir)
@@ -81,6 +87,7 @@ def save_date_cache(chash, cachedir='.cache'):
     cfile = os.path.expanduser(cfile)
     with open(cfile, 'wb') as f:
         pickle.dump(chash, f)
+
 
 def get_commit_date(commitid, checkoutdir):
     xdate = None
@@ -90,12 +97,13 @@ def get_commit_date(commitid, checkoutdir):
         if x.strip().lower().startswith('commitdate:'):
             # 'Date:   Fri Nov 11 12:48:45 2016 -0500'
             x = x.replace('CommitDate:', '', 1).strip()
-            xparts = x.split()
+            #xparts = x.split()
             x = x.split('-', 1)[0].strip()
             x = x.split('+', 1)[0].strip()
             xdate = datetime.datetime.strptime(x, "%a %b %d %H:%M:%S %Y")
             break
     return xdate
+
 
 def checkout_commit(checkoutdir, githash):
 
@@ -113,6 +121,7 @@ def checkout_commit(checkoutdir, githash):
     print('\tsubmod: %s' % rc)
     assert rc == 0, "unable to update submodules"
 
+
 def _get_hacking_dir(checkoutdir):
     if not os.path.isdir(os.path.join(checkoutdir, 'hacking')):
         # possibly using the submodule dir as the checkout
@@ -123,6 +132,7 @@ def _get_hacking_dir(checkoutdir):
     else:
         hacking_dir = os.path.join(checkoutdir, 'hacking')
     return hacking_dir
+
 
 def get_version(checkoutdir, checkrc=False):
     # get the reported version
@@ -146,6 +156,7 @@ def get_version(checkoutdir, checkrc=False):
 
     return (rc, so, se, version)
 
+
 def run_test(checkoutdir, testscript, capture=True):
     if not checkoutdir.startswith('/'):
         checkoutdir = os.path.abspath(checkoutdir)
@@ -158,10 +169,11 @@ def run_test(checkoutdir, testscript, capture=True):
     (rc, so, se) = run_command(cmd, capture=capture, cwd=os.getcwd())
     return (rc, so, se)
 
+
 def slice_dates(checkoutdir, commits, start, stop):
     '''Determine date for commits and limit to a given range'''
-    start_idx = None
-    stop_idx = None
+    #start_idx = None
+    #stop_idx = None
 
     if start:
         start = datetime.datetime.strptime(start, '%Y-%m-%d')
@@ -181,20 +193,20 @@ def slice_dates(checkoutdir, commits, start, stop):
     save_date_cache(commit_dates)
 
     if start and stop:
-        commits = [x for x in commits if commit_dates[x] > start and commit_dates[x] < stop]
+        commits = [x for x in commits
+                   if commit_dates[x] > start and commit_dates[x] < stop]
     elif start and not stop:
         commits = [x for x in commits if commit_dates[x] > start]
     elif not start and stop:
         commits = [x for x in commits if commit_dates[x] < stop]
 
-    #import epdb; epdb.st()
     return commits
+
 
 def get_current_branch(checkoutdir):
     cmd = "git branch | egrep ^* | awk '{print $2}'"
     (rc, so, se) = run_command(cmd, capture=True, cwd=checkoutdir)
     return so.strip()
-
 
 
 class AnsibleBisector(object):
@@ -213,7 +225,6 @@ class AnsibleBisector(object):
     tcommits = None
     expected = None
 
-
     def __init__(self, commits, **kwargs):
         self.expected = None
         self.commits = commits
@@ -221,7 +232,7 @@ class AnsibleBisector(object):
         self.current_index = None
 
     def print_status(self):
-        if self.marker != None:
+        if self.marker is not None:
             for idx,x in enumerate(self.commits):
                 if idx <= (self.marker - 100) or idx >= (self.marker + 100):
                     continue
@@ -253,14 +264,15 @@ class AnsibleBisector(object):
 
     def get_bisected_commit(self):
         # we should have a marker at this point
-        if self.marker == None:
+        if self.marker is None:
             import epdb; epdb.st()
             return None
 
         a = self.commits[self.marker]
         b = self.commits[self.marker+1]
 
-        if self.results[a]['rc'] == self.checkrc and self.results[b]['rc'] != self.checkrc:
+        if self.results[a]['rc'] == self.checkrc and \
+                self.results[b]['rc'] != self.checkrc:
             #self.print_status()
             if self.expected and b != self.expected:
                 self.print_status()
@@ -285,7 +297,7 @@ class AnsibleBisector(object):
 
         if chash in self.results:
             # looped back to a tested commit
-            if self.marker != None:
+            if self.marker is not None:
                 next_index = self.marker + 1
             else:
                 next_index = 0
@@ -293,13 +305,13 @@ class AnsibleBisector(object):
             try:
                 next_commit = self.commits[next_index]
             except IndexError as e:
-                print('WARNING: ran out of commits')
+                print('WARNING: ran out of commits: %s' % e)
                 return None
 
             if next_commit not in self.results:
                 self.current_index = next_index
                 return self.commits[self.current_index]
-            elif self.marker == None:
+            elif self.marker is None:
                 import epdb; epdb.st()
             else:
                 # No more to test...
@@ -314,7 +326,7 @@ class AnsibleBisector(object):
 
         # need to move the marker back one if it's greater than this index
         cindex = self.commits.index(commit)
-        if self.marker != None and self.marker > cindex:
+        if self.marker is not None and self.marker > cindex:
             self.marker -= 1
 
         # iterate to the next testable commit index
@@ -326,7 +338,7 @@ class AnsibleBisector(object):
 
         if nindex > len(self.commits) - 1:
             # went over the size of the list, need to go backwards
-            if self.marker != None:
+            if self.marker is not None:
                 nindex = self.marker - 1
             else:
                 nindex = 0
@@ -369,13 +381,13 @@ class AnsibleBisector(object):
         last_index = self.current_index
         last_commit = self.commits[last_index]
         last_rc = self.results[last_commit]['rc']
-        last_so = self.results[last_commit]['so']
-        last_se = self.results[last_commit]['se']
+        #last_so = self.results[last_commit]['so']
+        #last_se = self.results[last_commit]['se']
 
         #if last_rc == self.checkrc:
         if self.matches(last_rc):
             # move forward if marker is greater
-            if self.marker == None:
+            if self.marker is None:
                 self.marker = last_index
             elif last_index > self.marker:
                 self.marker = last_index
@@ -384,18 +396,69 @@ class AnsibleBisector(object):
             self.current_index = last_index + new_index
         else:
             # move backward
-            if self.marker != None:
+            if self.marker is not None:
                 choices = self.commits[self.marker:last_index]
             else:
                 choices = self.commits[:last_index]
             new_index = len(choices) / 2
-            if self.marker != None:
+            if self.marker is not None:
                 self.current_index = self.marker + new_index
             else:
                 self.current_index = new_index
-            #import epdb; epdb.st()
 
-        #print('current: %s' % self.current_index)
+
+def find_first_version_commit(version, checkoutdir, commits):
+
+    CMAP = {}
+
+    ab = AnsibleBisector(commits)
+
+    tc = ab.get_commit_to_test()
+    while tc:
+
+        print('# searching for start of %s' % version)
+
+        CMAP[tc] = {'date': None, 'version': None}
+
+        # get rid of previous remnants
+        clean_checkout(checkoutdir)
+
+        # set the checkout version
+        aversion = checkout_commit(checkoutdir, tc)
+
+        # get timestamp
+        CMAP[tc]['date'] = get_checkout_date(checkoutdir)
+
+        # get the version and use as a sanity check
+        (vrc, aso, ase, aversion) = get_version(checkoutdir)
+
+        # skip if failed
+        if vrc != 0:
+            ab.remove_commit(tc)
+            CMAP.pop(tc, None)
+            continue
+
+        aversion = LooseVersion(aversion)
+        CMAP[tc]['version'] = aversion
+        print('\t%s' % aversion)
+
+        #pprint(CMAP[tc])
+        #import epdb; epdb.st()
+
+        if aversion < version:
+            ab.set_result(tc, 0, '', '')
+        else:
+            ab.set_result(tc, 1, '', '')
+
+        tc = ab.get_commit_to_test()
+
+    candidates = [x for x in CMAP.items() if x[1]['version'] < version]
+    candidates = sorted(candidates, key=lambda tup: tup[1]['date'])
+    lc = candidates[-1][0]
+    lc_index = commits.index(lc)
+    fc = commits[lc_index+1]
+    #import epdb; epdb.st()
+    return fc
 
 
 def main():
@@ -404,14 +467,25 @@ def main():
     parser.add_argument('checkoutdir')
     parser.add_argument('testscript')
 
-    parser.add_argument('--direction', help="which direction to test foward|[backward]",
+    parser.add_argument('--direction',
+                        help="which direction to test foward|[backward]",
                         choices=['backward', 'forward'], default='backward')
-    parser.add_argument('--checkrc', help="what returncode should trigger a stop (can be !<INT>)", type=str, default='1')
-    parser.add_argument('--ignorerc', help="what returncodes to ignore", type=int, default=1)
-    parser.add_argument('--version_start', help="what ansible version to start testing at")
-    parser.add_argument('--version_stop', help="what ansible version to stop testing at")
-    parser.add_argument('--date_start', help="what date to start testing at (YYYY-MM-DD)")
-    parser.add_argument('--date_stop', help="what date to stop testing at (YYYY-MM-DD)")
+    parser.add_argument('--checkrc',
+                        help="what rc should trigger a stop (can be !<INT>)",
+                        type=str,
+                        default='1')
+    parser.add_argument('--ignorerc',
+                        help="what returncodes to ignore",
+                        type=int,
+                        default=1)
+    parser.add_argument('--version_start',
+                        help="what ansible version to start testing at")
+    parser.add_argument('--version_stop',
+                        help="what ansible version to stop testing at")
+    parser.add_argument('--date_start',
+                        help="what date to start testing at (YYYY-MM-DD)")
+    parser.add_argument('--date_stop',
+                        help="what date to stop testing at (YYYY-MM-DD)")
     args = parser.parse_args()
 
     # fixup args
@@ -441,7 +515,12 @@ def main():
     # limit commits to a date range
     if args.date_start or args.date_stop:
         print('Total commits before slicing: %s' % len(commits))
-        commits = slice_dates(args.checkoutdir, commits, args.date_start, args.date_stop)
+        commits = slice_dates(
+            args.checkoutdir,
+            commits,
+            args.date_start,
+            args.date_stop
+        )
         print('Total commits after slicing: %s' % len(commits))
 
     # reverse list if direction should be forward
@@ -451,8 +530,20 @@ def main():
     # mapping of commits to their timestamps
     TSMAP = {}
 
+    # slice commits by version
+    if args.version_start:
+        sfc = find_first_version_commit(
+            args.version_start,
+            args.checkoutdir,
+            commits
+        )
+        sfc_ix = commits.index(sfc)
+        commits = commits[sfc_ix:]
+        #import epdb; epdb.st()
+
     ab = AnsibleBisector(commits)
     ab.negative_test = negative_test
+
     tc = ab.get_commit_to_test()
     while tc:
 
@@ -511,4 +602,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

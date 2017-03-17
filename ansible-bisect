@@ -34,8 +34,13 @@ def run_command(args, capture=False, shell=True, cwd=None):
 
 def clean_checkout(checkoutdir):
     '''Remove all .pyc files in a checkout'''
+
     cmd = 'find %s -type f -name "*.pyc" | xargs rm -f' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
+
+    #cmd = 'rm -rf %s ; cp -Rp ansible.clean %s' % (checkoutdir, checkoutdir)
+    #(rc, so, se) = run_command(cmd, capture=True)
+
 
 
 def get_commits(checkoutdir):
@@ -116,7 +121,7 @@ def checkout_commit(checkoutdir, githash):
     assert rc == 0, "unable to checkout %s" % githash
 
     # update submodules
-    cmd = 'cd %s; git submodule update --recursive' % checkoutdir
+    cmd = 'cd %s; git submodule update --init --recursive' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
     print('\tsubmod: %s' % rc)
     assert rc == 0, "unable to update submodules"
@@ -128,7 +133,8 @@ def _get_hacking_dir(checkoutdir):
         hacking_dir = os.path.abspath('%s/../../../../hacking' % checkoutdir)
         if not os.path.isdir(hacking_dir):
             print('NO HACKING DIRECTORY COULD BE FOUND IN CHECKOUT!!!')
-            sys.exit(1)
+            #sys.exit(1)
+            return False
     else:
         hacking_dir = os.path.join(checkoutdir, 'hacking')
     return hacking_dir
@@ -137,6 +143,10 @@ def _get_hacking_dir(checkoutdir):
 def get_version(checkoutdir, checkrc=False):
     # get the reported version
     hacking_dir = _get_hacking_dir(checkoutdir)
+    if not hacking_dir:
+        return (1, '', '', '')
+
+
     cmd = 'source %s/env-setup ; ansible --version' % hacking_dir
     (rc, so, se) = run_command(cmd, capture=True)
 
@@ -214,6 +224,8 @@ class AnsibleBisector(object):
     commits = []
     checkrc = 0
     negative_test = False
+    linear = False
+    linear_increment = 1
     direction = 'backward'
     version_start = None
     version_stop = None
@@ -283,6 +295,36 @@ class AnsibleBisector(object):
 
     def get_commit_to_test(self):
         '''Tell the caller what to test next'''
+
+        if self.linear:
+            #print(self.direction)
+            #old = self.current_index
+            #print(self.current_index)
+
+            if self.current_index is None:
+                if self.direction == 'backward':
+                    #self.current_index = len(self.commits) - 1
+                    self.current_index = 0
+                else:
+                    #self.current_index = 0
+                    self.current_index = len(self.commits) - self.linear_increment
+            else:
+                if self.direction == 'backward':
+                    #print('adding 1')
+                    #self.current_index -= 1
+                    self.current_index = self.current_index + self.linear_increment
+                else:
+                    #print('subtract 1')
+                    #self.current_index += 1
+                    self.current_index = self.current_index - self.linear_increment
+
+            #if old == self.current_index:
+            #    import epdb; epdb.st()
+            #print(self.current_index)
+            #print(len(self.commits))
+
+            return self.commits[self.current_index]
+
         # start at the middle
         if not self.current_index:
             self.current_index = len(self.commits) / 2
@@ -323,6 +365,10 @@ class AnsibleBisector(object):
         '''Remove a completely busted commit'''
         if commit in self.results:
             self.results.pop(commit, None)
+
+        if commit not in self.commits:
+            import epdb; epdb.st()
+            return True
 
         # need to move the marker back one if it's greater than this index
         cindex = self.commits.index(commit)
@@ -378,6 +424,10 @@ class AnsibleBisector(object):
             return True
 
     def set_current_index(self):
+
+        if self.linear:
+            return True
+
         last_index = self.current_index
         last_commit = self.commits[last_index]
         last_rc = self.results[last_commit]['rc']
@@ -416,6 +466,10 @@ def find_first_version_commit(version, checkoutdir, commits):
     tc = ab.get_commit_to_test()
     while tc:
 
+        if tc not in ab.commits:
+            tc = ab.get_commit_to_test()
+            #import epdb; epdb.st()
+
         print('# searching for start of %s' % version)
 
         CMAP[tc] = {'date': None, 'version': None}
@@ -431,6 +485,7 @@ def find_first_version_commit(version, checkoutdir, commits):
 
         # get the version and use as a sanity check
         (vrc, aso, ase, aversion) = get_version(checkoutdir)
+        print('\tversion: %s' % aversion)
 
         # skip if failed
         if vrc != 0:
@@ -440,7 +495,7 @@ def find_first_version_commit(version, checkoutdir, commits):
 
         aversion = LooseVersion(aversion)
         CMAP[tc]['version'] = aversion
-        print('\t%s' % aversion)
+        #print('\t%s' % aversion)
 
         #pprint(CMAP[tc])
         #import epdb; epdb.st()
@@ -486,6 +541,9 @@ def main():
                         help="what date to start testing at (YYYY-MM-DD)")
     parser.add_argument('--date_stop',
                         help="what date to stop testing at (YYYY-MM-DD)")
+    parser.add_argument('--linear', action='store_true')
+    parser.add_argument('--linear_increment', type=int, default=1)
+    parser.add_argument('--show_errors', action='store_true')
     args = parser.parse_args()
 
     # fixup args
@@ -543,6 +601,9 @@ def main():
 
     ab = AnsibleBisector(commits)
     ab.negative_test = negative_test
+    ab.direction = args.direction
+    ab.linear = args.linear
+    ab.linear_increment = args.linear_increment
 
     tc = ab.get_commit_to_test()
     while tc:
@@ -589,10 +650,16 @@ def main():
         # run the test
         (rc, so, se) = run_test(args.checkoutdir, args.testscript)
         print('\trc: %s' % rc)
+        if args.show_errors and rc != 0:
+            print(str(so) + str(se))
         #if rc != 0:
         #    sys.exit(1)
         ab.set_result(tc, rc, so, se)
         tc = ab.get_commit_to_test()
+
+        #print('## %s' % ab.current_index)
+        #print('## %s' % id(ab.current_index))
+        #print('## %s' % id(ab))
 
     #ab.print_status()
     bisected_commit = ab.get_bisected_commit()

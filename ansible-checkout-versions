@@ -23,7 +23,6 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args()
 
-
     CACHEDIR = "/var/cache/ansible/ansible.checkout.clean"
     BASEDIR = "/var/cache/ansible/version_checkouts"
 
@@ -38,6 +37,10 @@ def main():
         dstdir = os.path.join(BASEDIR, 'ansible.%s' % V)
         if not os.path.isdir(dstdir):
             shutil.copytree(CACHEDIR,dstdir)
+        else:
+            # skip existing checkouts
+            continue
+
         cmd = 'cd %s; git checkout -f tags/%s' % (dstdir, V)
         if args.verbose:
             print('cmd: %s' % cmd)

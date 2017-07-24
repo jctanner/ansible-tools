@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+
+#import argparse
+import os
+import subprocess
+import sys
+
+BASEDIR = "/var/cache/ansible/version_checkouts"
+REMOTEHOST = 'tannerjc.net'
+REMOTEPATH = '/home/tannerjc/tannerjc.net/public/ansible'
+REMOTEUSER = 'tannerjc'
+
+
+def run_command(args, checkrc=False):
+    """ Run a command on the local host """
+    p = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=True
+    )
+    (so, se) = p.communicate()
+
+    if checkrc and p.returncode != 0:
+        print(str(so), str(se))
+        sys.exit(p.returncode)
+
+    return (p.returncode, so, se)
+
+
+def remote_command(cmd):
+    """ Run a command on the remote host """
+    rcmd = "ssh {}@{} '{}'".format(REMOTEUSER, REMOTEHOST, cmd)
+    return run_command(rcmd)
+
+
+def main():
+
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-v', '--verbose', action='store_true')
+    args = parser.parse_args()
+    """
+
+    (rc, so, se) = run_command('ansible-list-versions')
+    VERSIONS = [x.strip() for x in so.split('\n')
+                if x.strip() and 'devel' not in x]
+
+    for V in VERSIONS:
+
+        # where the checkout resides
+        dstdir = os.path.join(BASEDIR, 'ansible.%s' % V)
+
+        # tarball name
+        tarname = 'ansible-{}.tar.gz'.format(V)
+        remotetar = os.path.join(REMOTEPATH, tarname)
+
+        # check if already on tannerjc.net ...
+        (rc, so, se) = remote_command('ls -al {}'.format(remotetar))
+
+        if rc != 0:
+            # make the tarball
+            localtar = os.path.join('/tmp', tarname)
+            if os.path.isfile(localtar):
+                os.remove(localtar)
+            cmd = 'tar czvf {} {}'.format(localtar, dstdir)
+            print(cmd)
+            run_command(cmd, checkrc=True)
+
+            # push it
+            cmd = 'scp {} {}@{}:{}'.format(
+                localtar, REMOTEUSER, REMOTEHOST, remotetar
+            )
+            print(cmd)
+            run_command(cmd, checkrc=True)
+
+            # clear cache
+            os.remove(localtar)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,242 @@
+#!/usr/bin/env python
+
+# atw - ansible-test wrapper
+#
+#   A wrapper for ansible-test to extend it beyond it's original design goals.
+# 
+#   Run any ansible-test command with additonal options such as --vagrant
+#   Examples:
+#       atc sanity --vagrant=geerlingguy/centos7
+#       atc integration lineinfile --vagrant=geerlingguy/centos7
+
+import argparse
+import logging
+import os
+import shutil
+import subprocess
+import sys
+
+
+def set_logger(debug=False):
+    if debug:
+        logging.level = logging.DEBUG
+    else:
+        logging.level = logging.INFO
+
+    logFormatter = \
+        logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    rootLogger = logging.getLogger()
+
+    if debug:
+        rootLogger.setLevel(logging.DEBUG)
+    else:
+        rootLogger.setLevel(logging.INFO)
+
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logFormatter)
+    rootLogger.addHandler(consoleHandler)
+
+
+def run_command(cmd, live=False):
+    p = subprocess.Popen(
+        cmd, 
+        shell=True, 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE
+    )
+    if live:
+        so = ''
+        se = ''
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            so += line + '\n'
+            sys.stdout.write(line)
+        p.wait()
+    else:
+        so,se = p.communicate()
+    return (p.returncode, so, se)
+
+
+def get_ansibletest_path():
+    cmd = 'which ansible-test'
+    (rc, so, se) = run_command(cmd)
+    return so.strip()
+
+
+def get_checkout_from_ansibletest_path(atpath):
+    # .../ansible/test/runner/ansible-test
+    cpath = None
+    paths = atpath.split('/')
+    if paths[-2] == 'runner' and paths[-3] == 'test':
+        cpath = '/'.join(paths[0:-3])    
+    return cpath
+
+
+class VagrantTester(object):
+
+    BOXDIR = os.path.expanduser('~/.ansible.atw')
+
+    def __init__(self, vagrantargs, testargs):
+        self.vargs = vagrantargs
+        self.targs = testargs
+
+    def run(self):
+        atpath = get_ansibletest_path()
+        acpath = get_checkout_from_ansibletest_path(atpath)
+        logging.debug('setting up the box')
+        vagrantdir = self.get_vagrant_test_dir(self.vargs.vagrant)
+
+        # copy the checkout to the boxdir
+        dstdir = os.path.basename(acpath)
+        dstdir = os.path.join(vagrantdir, dstdir)
+        logging.debug('copying {} to {}'.format(acpath, dstdir))
+        shutil.copytree(acpath, dstdir, symlinks=True)
+
+        # create test wrapper
+        logging.debug('writing run.sh script')
+        self.write_test_wrapper(
+            vagrantdir, 
+            os.path.basename(dstdir),
+            ' '.join(self.targs)
+        )
+
+        # start the box
+        cmd = 'cd %s; vagrant up' % vagrantdir
+        logging.debug(cmd)
+        run_command(cmd, live=True)
+
+        # get ssh cmd prefix
+        sshprefix = self.get_box_sshcmd(vagrantdir)
+
+        # run the test command
+        if self.vargs.vagrant_nosudo:
+            tcmd = sshprefix + " -t '/vagrant/runtest.sh'"
+        else:
+            tcmd = sshprefix + " -t 'sudo /vagrant/runtest.sh'"
+        logging.debug(tcmd)
+        (rc, so, se) = run_command(tcmd, live=True)
+
+        # destroy and delete
+        if not self.vargs.vagrant_noclean:
+            logging.debug('cleanup the box')
+            self.cleanup(vagrantdir)
+
+        return rc
+
+    def get_vagrant_test_dir(self, boxname):
+        #basedir = '~/.ansible_test_wrapper'    
+        basedir = os.path.join(self.BOXDIR, 'vagrant.' + boxname.replace('/', '.'))
+        basedir = os.path.expanduser(basedir)
+        if not os.path.isdir(basedir):
+            os.makedirs(basedir)
+        else:
+            self.cleanup(basedir)
+            os.makedirs(basedir)
+
+        cmd = 'cd %s; vagrant init %s' % (basedir, boxname)
+        (rc, so, se) = run_command(cmd, live=True)
+
+        return basedir
+
+    def cleanup(self, boxpath):
+        cmd = 'cd %s; vagrant destroy -f' % (boxpath)
+        (rc, so, se) = run_command(cmd, live=True)
+        shutil.rmtree(boxpath)
+
+    def get_box_sshcmd(self, boxdir):
+        #jtanner-OSX:vagrant.geerlingguy.centos7 jtanner$ vagrant ssh-config
+        #Host default
+        #  HostName 127.0.0.1
+        #  User vagrant
+        #  Port 2222
+        #  IdentityFile .../.vagrant/machines/default/virtualbox/private_key
+
+        cmd = 'cd %s; vagrant ssh-config' % (boxdir)
+        (rc, so, se) = run_command(cmd)
+        lines = [x.strip() for x in so.split('\n')]
+
+        host = None
+        port = None
+        user = None
+        key = None
+
+        for x in lines:
+            if x.startswith('HostName'):
+                host = x.split()[-1]
+            elif x.startswith('User '):
+                user = x.split()[-1]
+            elif x.startswith('Port'):
+                port = x.split()[-1]
+            elif x.startswith('IdentityFile'):
+                key = x.split()[-1]
+
+        sshcmd = 'cd {}; ssh'.format(boxdir)
+        sshcmd += ' -o UserKnownHostsFile=/dev/null'
+        sshcmd += ' -o StrictHostKeyChecking=no'
+        sshcmd += ' -o PasswordAuthentication=no'
+        sshcmd += ' -o Port={}'.format(port)
+        sshcmd += ' -o User={}'.format(user)
+        sshcmd += ' -o IdentityFile={}'.format(key)
+        sshcmd += ' {}'.format(host)
+
+        return sshcmd
+
+    def write_test_wrapper(self, vboxdir, checkoutdir, cmd):
+        scriptf = os.path.join(vboxdir, 'runtest.sh')
+        script =  '#!/bin/bash\n'
+        script += 'cd /vagrant/{}\n'.format(checkoutdir)
+        script += 'source hacking/env-setup\n'
+        script += '{}\n'.format(cmd)
+        with open(scriptf, 'wb') as f:
+            f.write(script)
+        cmd = 'chmod +x {}'.format(scriptf)
+        run_command(cmd)
+
+
+def main():
+    # any relevant args for the wrapper?
+    argv = sys.argv
+    wrapperargs = []
+    cleanargs = ['ansible-test']
+    for idx,x in enumerate(argv):
+        if idx == 0:
+            continue
+        if x.startswith('--atw'):
+            wrapperargs.append(x)
+        elif x.startswith('--vagrant'):
+            wrapperargs.append(x)
+        elif x.startswith('--ssh'):
+            wrapperargs.append(x)
+        else:
+            cleanargs.append(x)
+
+    parser = argparse.ArgumentParser()
+
+    # run in a vagrant box
+    parser.add_argument('--atw-debug', action='store_true')
+    parser.add_argument('--vagrant', default=None, help='<user>/<box>')
+    parser.add_argument('--vagrant-nosudo', action='store_true',
+                        help='run tests as the vagrant user without sudo')
+    parser.add_argument('--vagrant-noclean', action='store_true',
+                        help='do not destroy and remove the box afterwards')
+
+    # run on a remote host via ssh
+    parser.add_argument('--ssh', default=None, help='<user>@<host>')
+
+    wargs = parser.parse_args(wrapperargs)
+    set_logger(debug=wargs.atw_debug)
+
+    if wargs.vagrant:
+        logging.debug('starting vagrant tester')
+        sys.exit(VagrantTester(wargs, cleanargs).run())
+    elif wags.ssh:
+        raise('ssh not yet implemented')
+    else:
+        (rc, so , se) = run_command(' '.join(cleanargs), live=True)
+        sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()

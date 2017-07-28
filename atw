@@ -18,6 +18,7 @@ import sys
 
 
 def set_logger(debug=False):
+    '''Build and configure the logger'''
     if debug:
         logging.level = logging.DEBUG
     else:
@@ -38,10 +39,11 @@ def set_logger(debug=False):
 
 
 def run_command(cmd, live=False):
+    '''Run a command with or without realtime output'''
     p = subprocess.Popen(
-        cmd, 
-        shell=True, 
-        stdout=subprocess.PIPE, 
+        cmd,
+        shell=True,
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
     if live:
@@ -60,21 +62,24 @@ def run_command(cmd, live=False):
 
 
 def get_ansibletest_path():
+    '''Where is ansible-test'''
     cmd = 'which ansible-test'
     (rc, so, se) = run_command(cmd)
     return so.strip()
 
 
 def get_checkout_from_ansibletest_path(atpath):
+    '''Split ansible-test path to find the checkout dir'''
     # .../ansible/test/runner/ansible-test
     cpath = None
     paths = atpath.split('/')
     if paths[-2] == 'runner' and paths[-3] == 'test':
-        cpath = '/'.join(paths[0:-3])    
+        cpath = '/'.join(paths[0:-3])
     return cpath
 
 
 class VagrantTester(object):
+    '''Run ansible-test inside a vagrant box'''
 
     BOXDIR = os.path.expanduser('~/.ansible.atw')
 
@@ -97,7 +102,7 @@ class VagrantTester(object):
         # create test wrapper
         logging.debug('writing run.sh script')
         self.write_test_wrapper(
-            vagrantdir, 
+            vagrantdir,
             os.path.basename(dstdir),
             ' '.join(self.targs)
         )
@@ -126,7 +131,7 @@ class VagrantTester(object):
         return rc
 
     def get_vagrant_test_dir(self, boxname):
-        #basedir = '~/.ansible_test_wrapper'    
+        #basedir = '~/.ansible_test_wrapper'
         basedir = os.path.join(self.BOXDIR, 'vagrant.' + boxname.replace('/', '.'))
         basedir = os.path.expanduser(basedir)
         if not os.path.isdir(basedir):
@@ -185,7 +190,7 @@ class VagrantTester(object):
 
     def write_test_wrapper(self, vboxdir, checkoutdir, cmd):
         scriptf = os.path.join(vboxdir, 'runtest.sh')
-        script =  '#!/bin/bash\n'
+        script = '#!/bin/bash\n'
         script += 'cd /vagrant/{}\n'.format(checkoutdir)
         script += 'source hacking/env-setup\n'
         script += '{}\n'.format(cmd)
@@ -231,10 +236,10 @@ def main():
     if wargs.vagrant:
         logging.debug('starting vagrant tester')
         sys.exit(VagrantTester(wargs, cleanargs).run())
-    elif wags.ssh:
-        raise('ssh not yet implemented')
+    elif wargs.ssh:
+        raise 'ssh not yet implemented'
     else:
-        (rc, so , se) = run_command(' '.join(cleanargs), live=True)
+        (rc, so, se) = run_command(' '.join(cleanargs), live=True)
         sys.exit(rc)
 
 

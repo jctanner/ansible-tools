@@ -3,11 +3,11 @@
 # atw - ansible-test wrapper
 #
 #   A wrapper for ansible-test to extend it beyond it's original design goals.
-# 
 #   Run any ansible-test command with additonal options such as --vagrant
+#
 #   Examples:
-#       atc sanity --vagrant=geerlingguy/centos7
-#       atc integration lineinfile --vagrant=geerlingguy/centos7
+#       atw sanity --python=2.7 --vagrant=geerlingguy/centos7
+#       atw integration lineinfile --vagrant=geerlingguy/centos7
 
 import argparse
 import logging

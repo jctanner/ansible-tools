@@ -209,7 +209,10 @@ print(json.dumps(data, indent=2, sort_keys=True))
             f.write(fdata + '\n')
         st = os.stat(fpath)
         os.chmod(fpath, st.st_mode | stat.S_IEXEC)
+        return fpath
 
+EMPTY_ASSERT_EXPECTED = '''
+'''
 
 class VarTestMaker(object):
     def __init__(self, features, dynamic_inventory=False):
@@ -226,6 +229,7 @@ class VarTestMaker(object):
         self.roles = []
         self.ansible_command = None
         self.stdout = None
+        self.assert_expected = True
 
     def write_playbook(self):
         fname = os.path.join(TESTDIR, 'site.yml')
@@ -257,13 +261,15 @@ class VarTestMaker(object):
                                 f.write('      %s\n' % x)
                     else:
                         f.write('    - %s\n' % task)
+                if self.assert_expected:
+                    f.write('    - include: assert_expected.yml\n')
 
     def build(self):
 
         if self.dynamic_inventory:
             # python based inventory file
             self.di = DynamicInventory(self.features)
-            self.di.write_script()
+            self.inventory_script_path = self.di.write_script()
         else:
             # ini based inventory file
             if 'ini_host' in self.features:
@@ -413,6 +419,15 @@ class VarTestMaker(object):
         else:
             self.tasks.append('debug: var=findme')
 
+        if self.assert_expected:
+            # write an empty assert_expected for the eval,so copy_local can add a real one
+            fname = os.path.join(TESTDIR, 'assert_expected.yml')
+            with open(fname, 'wb') as f:
+                f.write(EMPTY_ASSERT_EXPECTED)
+
+
+
+
         self.write_playbook()
 
     def run(self):
@@ -466,6 +481,15 @@ class VarTestMaker(object):
         print(self.ansible_command)
         print('## STDOUT')
         print(self.stdout)
+
+
+ASSERT_EXPECTED = '''
+- set_fact:
+    expected: %s
+- assert:
+    that:
+      - findme == expected
+'''
 
 
 def main():
@@ -599,6 +623,12 @@ def main():
                 thisindex = '0' + thisindex
             thisdir = os.path.join(topdir, '%s.%s' % (thisindex, res))
             shutil.copytree(TESTDIR, thisdir)
+
+            set_expected = True
+            if set_expected:
+                expfile = os.path.join(thisdir, 'assert_expected.yml')
+                with open(expfile, 'wb') as f:
+                    f.write(ASSERT_EXPECTED % res)
 
         shutil.rmtree(TESTDIR)
         index += 1

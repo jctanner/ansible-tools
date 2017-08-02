@@ -108,7 +108,7 @@ class VagrantTester(object):
         )
 
         # start the box
-        cmd = 'cd %s; vagrant up' % vagrantdir
+        cmd = 'cd %s; vagrant up --provider=virtualbox' % vagrantdir
         logging.debug(cmd)
         run_command(cmd, live=True)
 

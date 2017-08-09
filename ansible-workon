@@ -103,9 +103,10 @@ echo "version | rc"
 echo "------ | ------"
 for VERSION in \$VERSIONS; do
     #echo "## \$VERSION"
-    STATERC=\$(fgrep "\$VERSION:" allversions.log | tail -n1 | cut -d\: -f2)
+    STATERC=\$(fgrep "\$VERSION ;" returncodes.txt | tail -n1 | cut -d\: -f2)
     echo "\$VERSION | \$STATERC"
 done
 EOF
+chmod +x report.sh
 echo $TICKETDIR
 echo $TICKETDIR > /tmp/ansible.workon

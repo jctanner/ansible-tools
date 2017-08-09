@@ -36,7 +36,9 @@ def main():
             print('process %s checkout' % V)
         dstdir = os.path.join(BASEDIR, 'ansible.%s' % V)
         if not os.path.isdir(dstdir):
-            shutil.copytree(CACHEDIR,dstdir)
+            #shutil.copytree(CACHEDIR,dstdir)
+            cmd = 'cp -Rp {} {}'.format(CACHEDIR, dstdir)
+            (rc, so, se) = run_command(cmd)
         else:
             # skip existing checkouts
             continue

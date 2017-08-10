@@ -103,7 +103,7 @@ echo "version | rc"
 echo "------ | ------"
 for VERSION in \$VERSIONS; do
     #echo "## \$VERSION"
-    STATERC=\$(fgrep "\$VERSION ;" returncodes.txt | tail -n1 | cut -d\: -f2)
+    STATERC=\$(fgrep "\$VERSION ;" returncodes.txt | tail -n1 | cut -d\; -f2)
     echo "\$VERSION | \$STATERC"
 done
 EOF

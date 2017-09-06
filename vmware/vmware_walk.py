@@ -22,6 +22,7 @@ import atexit
 import os
 import requests
 import ssl
+import sys
 
 from pyVim import connect
 from pyVmomi import vim
@@ -66,8 +67,9 @@ def connect_to_api(module, disconnect_atexit=True):
 
 class Module(object):
     params = {}
-    def fail_json(self, msg=None):
+    def fail_json(self, msg=None, apierror=None):
         print(msg)
+        print(apierror)
         sys.exit(1)
 
 
@@ -76,7 +78,7 @@ class VMwareWalker(object):
     def __init__(self):
         self.lines = []
 
-    def walk(self, obj, parent='', display=True):
+    def walk(self, obj, parent='', display=True, showdetail=True):
 
         name = None
         if hasattr(obj, 'name'):
@@ -88,19 +90,23 @@ class VMwareWalker(object):
             this_type = str(obj)
 
         # append to parent and display
-        thispath = parent + '/' + '[' + this_type + ']' + str(name)
+        if showdetail:
+            thispath = parent + '/' + '[' + this_type + ']' + str(name)
+        else:
+            thispath = parent + '/' + str(name)
+
         if display:
             print(thispath)
         self.lines.append(thispath)
 
         if isinstance(obj, vim.ServiceInstanceContent):
             obj = obj.rootFolder
-            self.walk(obj, parent=thispath, display=display)
+            self.walk(obj, parent=thispath, display=display, showdetail=showdetail)
             return
         elif isinstance(obj, vim.Folder):
             try:
                 for child in obj.childEntity:
-                    self.walk(child, parent=thispath, display=display)
+                    self.walk(child, parent=thispath, display=display, showdetail=showdetail)
             except Exception as e:
                 pass
             return
@@ -108,10 +114,10 @@ class VMwareWalker(object):
             for attrib in ['datastore', 'datastoreFolder', 'hostFolder', 'vmFolder']:
                 dobj = getattr(obj, attrib)
                 if not hasattr(dobj, 'count'):
-                    self.walk(dobj, parent=thispath, display=display)
+                    self.walk(dobj, parent=thispath, display=display, showdetail=showdetail)
                 else:
                     for dxobj in dobj:
-                        self.walk(dxobj, parent=thispath, display=display)
+                        self.walk(dxobj, parent=thispath, display=display, showdetail=showdetail)
             return
         elif isinstance(obj, vim.Datastore):
             for attrib in ['vm']:
@@ -119,21 +125,21 @@ class VMwareWalker(object):
                     continue
                 dobj = getattr(obj, attrib)
                 if not hasattr(dobj, 'count'):
-                    self.walk(dobj, parent=thispath, display=display)
+                    self.walk(dobj, parent=thispath, display=display, showdetail=showdetail)
                 else:
                     for dxobj in dobj:
-                        self.walk(dxobj, parent=thispath, display=display)
+                        self.walk(dxobj, parent=thispath, display=display, showdetail=showdetail)
             return
         elif isinstance(obj, vim.VirtualMachine):
             return
         elif isinstance(obj, vim.ComputeResource):
             for hobj in obj.host:
-                self.walk(hobj, parent=thispath, display=display)
+                self.walk(hobj, parent=thispath, display=display, showdetail=showdetail)
             return
         elif isinstance(obj, vim.HostSystem):
             try:
                 for vmobj in obj.vm:
-                    self.walk(vmobj, parent=thispath, display=display)
+                    self.walk(vmobj, parent=thispath, display=display, showdetail=showdetail)
             except Exception as e:
                 # vcsim has an issue here
                 pass
@@ -147,6 +153,7 @@ def main():
     parser.add_argument('--hostname', default=os.environ.get('VMWARE_HOST'))
     parser.add_argument('--username', default=os.environ.get('VMWARE_USER'))
     parser.add_argument('--password', default=os.environ.get('VMWARE_PASSWORD'))
+    parser.add_argument('--nodetail', action='store_true')
     parser.add_argument('--filter')
     args = parser.parse_args()
 
@@ -162,9 +169,9 @@ def main():
     vmw = VMwareWalker()
 
     if not args.filter:
-        vmw.walk(content, display=True)
+        vmw.walk(content, display=True, showdetail=(not args.nodetail))
     else:
-        vmw.walk(content, display=False)
+        vmw.walk(content, display=False, showdetail=(not args.nodetail))
         lines = [x for x in vmw.lines if args.filter in x]
         print '\n'.join(lines)
 

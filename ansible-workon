@@ -54,6 +54,15 @@ print json.dumps(INV, indent=2)
 EOF
 chmod +x inventory.py
 
+#########################################
+#   CONFIG
+#########################################
+
+cat << EOF > ansible.cfg
+[defaults]
+host_key_checking = False
+EOF
+
 
 #########################################
 #   PLAYBOOK 

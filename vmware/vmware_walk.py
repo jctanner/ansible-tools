@@ -19,10 +19,13 @@
 
 import argparse
 import atexit
+import itertools
 import os
 import requests
 import ssl
 import sys
+
+from pprint import pprint
 
 from pyVim import connect
 from pyVmomi import vim
@@ -65,8 +68,17 @@ def connect_to_api(module, disconnect_atexit=True):
     return service_instance.RetrieveContent()
 
 
+def fuzz_paths(paths):
+    fpaths = []
+    total = len(paths)
+    for chunksize in xrange(0, total):
+        fpaths += [x for x in itertools.combinations(paths, chunksize)]
+    return fpaths
+
+
 class Module(object):
     params = {}
+
     def fail_json(self, msg=None, apierror=None):
         print(msg)
         print(apierror)
@@ -75,10 +87,24 @@ class Module(object):
 
 class VMwareWalker(object):
 
-    def __init__(self):
+    def __init__(self, content=None):
+        self.content = content
+        self.si = self.content.searchIndex
         self.lines = []
+        self.valid_inventory_paths = []
+        self.invalid_inventory_paths = []
 
-    def walk(self, obj, parent='', display=True, showdetail=True):
+    def walk(self, obj, parent='', display=True, filter=None, showdetail=True, fuzzytest=False):
+
+        kwargs = {
+            'parent': parent,
+            'display': display,
+            'filter': filter,
+            'showdetail': showdetail,
+            'fuzzytest': fuzzytest
+        }
+        #pprint(kwargs)
+        #print('in: ' + parent)
 
         name = None
         if hasattr(obj, 'name'):
@@ -94,19 +120,34 @@ class VMwareWalker(object):
             thispath = parent + '/' + '[' + this_type + ']' + str(name)
         else:
             thispath = parent + '/' + str(name)
+        kwargs['parent'] = thispath
 
         if display:
-            print(thispath)
+            if filter and filter in thispath:
+                print(thispath)
+            elif not filter:
+                print(thispath)
         self.lines.append(thispath)
+
+        # test all possible paths to find this VM with findbyinventorypath
+        if (fuzzytest and isinstance(obj, (vim.Folder, vim.VirtualMachine)) and not filter) or \
+                (fuzzytest and isinstance(obj, (vim.Folder, vim.VirtualMachine)) and (filter and filter in obj.name)):
+
+            try:
+                self.fuzz_vm_inventory_paths(obj, thispath, showdetail=showdetail)
+            except Exception as e:
+                print(e)
+                sys.exit(1)
 
         if isinstance(obj, vim.ServiceInstanceContent):
             obj = obj.rootFolder
-            self.walk(obj, parent=thispath, display=display, showdetail=showdetail)
+            #self.walk(obj, parent=thispath, display=display, showdetail=showdetail, fuzzytest=fuzzytest)
+            self.walk(obj, **kwargs)
             return
         elif isinstance(obj, vim.Folder):
             try:
                 for child in obj.childEntity:
-                    self.walk(child, parent=thispath, display=display, showdetail=showdetail)
+                    self.walk(child, **kwargs)
             except Exception as e:
                 pass
             return
@@ -114,10 +155,10 @@ class VMwareWalker(object):
             for attrib in ['datastore', 'datastoreFolder', 'hostFolder', 'vmFolder']:
                 dobj = getattr(obj, attrib)
                 if not hasattr(dobj, 'count'):
-                    self.walk(dobj, parent=thispath, display=display, showdetail=showdetail)
+                    self.walk(dobj, **kwargs)
                 else:
                     for dxobj in dobj:
-                        self.walk(dxobj, parent=thispath, display=display, showdetail=showdetail)
+                        self.walk(dxobj, **kwargs)
             return
         elif isinstance(obj, vim.Datastore):
             for attrib in ['vm']:
@@ -125,27 +166,78 @@ class VMwareWalker(object):
                     continue
                 dobj = getattr(obj, attrib)
                 if not hasattr(dobj, 'count'):
-                    self.walk(dobj, parent=thispath, display=display, showdetail=showdetail)
+                    self.walk(dobj, **kwargs)
                 else:
                     for dxobj in dobj:
-                        self.walk(dxobj, parent=thispath, display=display, showdetail=showdetail)
+                        self.walk(dxobj, **kwargs)
             return
         elif isinstance(obj, vim.VirtualMachine):
             return
         elif isinstance(obj, vim.ComputeResource):
             for hobj in obj.host:
-                self.walk(hobj, parent=thispath, display=display, showdetail=showdetail)
+                self.walk(hobj, **kwargs)
             return
         elif isinstance(obj, vim.HostSystem):
             try:
                 for vmobj in obj.vm:
-                    self.walk(vmobj, parent=thispath, display=display, showdetail=showdetail)
+                    self.walk(vmobj, **kwargs)
             except Exception as e:
                 # vcsim has an issue here
                 pass
             return
 
         raise Exception('%s is an unhandled type' % type(obj))
+
+    def fuzz_vm_inventory_paths(self, obj, thispath, showdetail=False):
+        dirs = thispath.split('/')
+        dirs = [x.strip() for x in dirs if x.strip()]
+        if showdetail:
+            _dirs = dirs[:]
+            for idd,dirn in enumerate(_dirs):
+                if ']' in dirn:
+                    dirs[idd] = dirn.split(']', 1)[-1]
+
+        folder_res = None
+        if not folder_res:
+            #print('fuzz the paths')
+            _dirs = dirs[:] + ['vm']
+            _dirs = [x.strip() for x in _dirs if x.strip()] + [obj.name]
+            fpaths = fuzz_paths(_dirs)
+
+            for fpath in fpaths:
+                if not fpath:
+                    continue
+
+                # test the preceding slash too
+                _paths = ['/'.join(fpath), '/' + '/'.join(fpath)]
+
+                for _path in _paths:
+
+                    # search each path only once
+                    if _path in self.valid_inventory_paths or _path in self.invalid_inventory_paths:
+                        continue
+
+                    try:
+                        folder_res = self.si.FindByInventoryPath(_path)
+                    except Exception as e:
+                        folder_res = None
+
+                    if not folder_res or folder_res is None:
+                        self.invalid_inventory_paths.append(_path)
+
+                    if folder_res:
+                        self.valid_inventory_paths.append(_path)
+                        if showdetail:
+                            print('# {}'.format(_path))
+                            print('> {} [{}]'.format(folder_res.name, folder_res))
+                            if hasattr(folder_res, 'vmFolder'):
+                                print('>> {}'.format(folder_res.vmFolder.name))
+                        if hasattr(folder_res, 'childEntity'):
+                            #import epdb; epdb.st()
+                            for ce in folder_res.childEntity:
+                                if hasattr(ce, 'name'):
+                                    if showdetail:
+                                        print('>> {}'.format(ce.name))
 
 
 def main():
@@ -154,6 +246,7 @@ def main():
     parser.add_argument('--username', default=os.environ.get('VMWARE_USER'))
     parser.add_argument('--password', default=os.environ.get('VMWARE_PASSWORD'))
     parser.add_argument('--nodetail', action='store_true')
+    parser.add_argument('--fuzzytest', action='store_true')
     parser.add_argument('--filter')
     args = parser.parse_args()
 
@@ -166,14 +259,19 @@ def main():
     }
 
     content = connect_to_api(module)
-    vmw = VMwareWalker()
+    vmw = VMwareWalker(content=content)
+    kwargs = {
+        'display': True,
+        'filter': args.filter,
+        'showdetail': not args.nodetail,
+        'fuzzytest': args.fuzzytest
+    }
 
-    if not args.filter:
-        vmw.walk(content, display=True, showdetail=(not args.nodetail))
-    else:
-        vmw.walk(content, display=False, showdetail=(not args.nodetail))
-        lines = [x for x in vmw.lines if args.filter in x]
-        print '\n'.join(lines)
+    vmw.walk(content, **kwargs)
+    if args.fuzzytest:
+        print('')
+        print('# valid inputs for findByInventoryPath')
+        pprint(sorted(set([x for x in vmw.valid_inventory_paths if args.filter in x])))
 
 
 if __name__ == "__main__":

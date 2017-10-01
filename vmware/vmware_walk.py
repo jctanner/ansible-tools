@@ -26,6 +26,7 @@ import ssl
 import sys
 
 from pprint import pprint
+from urlparse import urlparse
 
 from pyVim import connect
 from pyVmomi import vim
@@ -36,6 +37,11 @@ def connect_to_api(module, disconnect_atexit=True):
     # https://raw.githubusercontent.com/ansible/ansible/devel/lib/ansible/module_utils/vmware.py
 
     hostname = module.params['hostname']
+    if ':' in hostname:
+        hostname,portnumber = hostname.rsplit(':')
+        portnumber = int(portnumber)
+    else:
+        portnumber = 443
     username = module.params['username']
     password = module.params['password']
     validate_certs = module.params['validate_certs']
@@ -45,20 +51,20 @@ def connect_to_api(module, disconnect_atexit=True):
                              'python or or use validate_certs=false')
 
     try:
-        service_instance = connect.SmartConnect(host=hostname, user=username, pwd=password)
+        service_instance = connect.SmartConnect(host=hostname, port=portnumber, user=username, pwd=password)
     except vim.fault.InvalidLogin as invalid_login:
         module.fail_json(msg=invalid_login.msg, apierror=str(invalid_login))
     except (requests.ConnectionError, ssl.SSLError) as connection_error:
         if '[SSL: CERTIFICATE_VERIFY_FAILED]' in str(connection_error) and not validate_certs:
             context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
             context.verify_mode = ssl.CERT_NONE
-            service_instance = connect.SmartConnect(host=hostname, user=username, pwd=password, sslContext=context)
+            service_instance = connect.SmartConnect(host=hostname, port=portnumber, user=username, pwd=password, sslContext=context)
         else:
             module.fail_json(msg="Unable to connect to vCenter or ESXi API on TCP/443.", apierror=str(connection_error))
     except Exception as e:
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         context.verify_mode = ssl.CERT_NONE
-        service_instance = connect.SmartConnect(host=hostname, user=username, pwd=password, sslContext=context)
+        service_instance = connect.SmartConnect(host=hostname, port=portnumber, user=username, pwd=password, sslContext=context)
 
     # Disabling atexit should be used in special cases only.
     # Such as IP change of the ESXi host which removes the connection anyway.
@@ -271,7 +277,10 @@ def main():
     if args.fuzzytest:
         print('')
         print('# valid inputs for findByInventoryPath')
-        pprint(sorted(set([x for x in vmw.valid_inventory_paths if args.filter in x])))
+        if args.filter:
+            pprint(sorted(set([x for x in vmw.valid_inventory_paths if args.filter in x])))
+        else:
+            pprint(sorted(set([x for x in vmw.valid_inventory_paths])))
 
 
 if __name__ == "__main__":

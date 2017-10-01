@@ -191,6 +191,13 @@ class VagrantTester(object):
     def write_test_wrapper(self, vboxdir, checkoutdir, cmd):
         scriptf = os.path.join(vboxdir, 'runtest.sh')
         script = '#!/bin/bash\n'
+        script += '\n'
+        script += '# check for setuptools since ansible requires it now\n'
+        script += 'pip list | fgrep -i setuptools\n'
+        script += 'if [ $? != 0 ]; then\n'
+        script += '    yum -y install python-setuptools\n'
+        script += 'fi\n'
+        script += '\n'
         script += 'cd /vagrant/{}\n'.format(checkoutdir)
         script += 'source hacking/env-setup\n'
         script += '{}\n'.format(cmd)

@@ -4,6 +4,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 
 
 def run_command(args):
@@ -26,6 +27,9 @@ def main():
     CACHEDIR = "/var/cache/ansible/ansible.checkout.clean"
     BASEDIR = "/var/cache/ansible/version_checkouts"
 
+    if not os.path.isdir(BASEDIR):
+        os.makedirs(BASEDIR)
+
     (rc, so, se) = run_command('ansible-list-versions')
     VERSIONS = [x.strip() for x in so.split('\n')
                 if x.strip() and 'devel' not in x]
@@ -39,6 +43,9 @@ def main():
             #shutil.copytree(CACHEDIR,dstdir)
             cmd = 'cp -Rp {} {}'.format(CACHEDIR, dstdir)
             (rc, so, se) = run_command(cmd)
+            if rc != 0:
+                print('ERROR: {}'.format(str(so) + str(se)))
+                sys.exit(rc)
         else:
             # skip existing checkouts
             continue

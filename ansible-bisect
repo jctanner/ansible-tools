@@ -21,6 +21,49 @@ BASEDIR = "/var/cache/ansible/version_checkouts"
 LOGFILE = "returncodes.txt"
 
 
+class Commit(object):
+    _logdata = {}
+    _hash = None
+    _date = None
+    _timestamp = None
+    _version = None
+
+    def __init__(self, logdata):
+        self._logdata = logdata
+        self._hash = None
+        self._date = None
+        self._timestamp =  None
+        self._isoformat = None
+
+    def __repr__(self):
+        return '{} {}'.format(self.isoformat, self.commithash)
+
+    def _splitdate(self, instring):
+        # Thu Jan 4 23:55:38 2018 -0800
+        # Thu Jan 4 23:55:38 2018
+        parts = instring.split()
+        return ' '.join(parts[:-1])
+
+    @property
+    def commithash(self):
+        return self._logdata.get('hash')
+
+    @property
+    def timestamp(self):
+        if not self._timestamp:
+            self._timestamp = datetime.datetime.strptime(
+                self._splitdate(self._logdata.get('commitdate')),
+                "%a %b %d %H:%M:%S %Y"
+            )
+        return self._timestamp
+
+    @property
+    def isoformat(self):
+        if not self._isoformat:
+            self._isoformat = self.timestamp.isoformat()
+        return self._isoformat
+
+
 def run_command(args, capture=False, shell=True, cwd=None):
     if not capture:
         p = subprocess.Popen(args, shell=True, cwd=cwd)
@@ -42,14 +85,56 @@ def clean_checkout(checkoutdir):
     #(rc, so, se) = run_command(cmd, capture=True)
 
 
-
+'''
 def get_commits(checkoutdir):
     cmd = 'cd %s; git log --pretty=oneline' % checkoutdir
     (rc, so, se) = run_command(cmd, capture=True)
     lines = so.split('\n')
     commits = [x.strip() for x in lines if x.strip()]
     commits = [x.split()[0] for x in commits]
-    #import epdb; epdb.st()
+    return commits
+'''
+
+def get_commits(checkoutdir):
+    cmd = 'cd %s; git log --pretty=fuller' % checkoutdir
+    (rc, so, se) = run_command(cmd, capture=True)
+    lines = so.split('\n')
+    lines = [x for x in lines if x.strip()]
+
+    commits = []
+    thiscommit = {}
+    linecount = len(lines)
+    for idl,line in enumerate(lines):
+
+        parts = line.split()
+
+        if line.startswith('commit '):
+
+            if thiscommit or idl >= linecount:
+                commits.append(thiscommit.copy())
+
+            thiscommit = {
+                'hash': parts[1],
+                'author': None,
+                'authordate': None,
+                'commiter': None,
+                'commitdate': None,
+                'message': ''
+            }
+
+        elif line.startswith('Author:'):
+            thiscommit['author'] = ' '.join(parts[1:])
+        elif line.startswith('AuthorDate:'):
+            thiscommit['authordate'] = ' '.join(parts[1:])
+        elif line.startswith('CommitDate:'):
+            thiscommit['commitdate'] = ' '.join(parts[1:])
+        elif line.startswith('Commit:'):
+            thiscommit['commiter'] = ' '.join(parts[1:])
+
+    for idx,x in enumerate(commits):
+        y = Commit(x)
+        commits[idx] = y
+
     return commits
 
 
@@ -113,6 +198,9 @@ def get_commit_date(commitid, checkoutdir):
 def checkout_commit(checkoutdir, githash):
 
     print('\tcommit: %s' % githash)
+    if isinstance(githash, Commit):
+        _githash = Commit
+        githash = githash.commithash
 
     # checkout
     cmd = 'cd %s; git checkout %s' % (checkoutdir, githash)
@@ -180,6 +268,7 @@ def run_test(checkoutdir, testscript, capture=True):
     return (rc, so, se)
 
 
+"""
 def slice_dates(checkoutdir, commits, start, stop):
     '''Determine date for commits and limit to a given range'''
     #start_idx = None
@@ -211,7 +300,27 @@ def slice_dates(checkoutdir, commits, start, stop):
         commits = [x for x in commits if commit_dates[x] < stop]
 
     return commits
+"""
 
+def slice_dates(checkoutdir, commits, start, stop):
+    '''Determine date for commits and limit to a given range'''
+    #start_idx = None
+    #stop_idx = None
+
+    if start:
+        start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    if stop:
+        stop = datetime.datetime.strptime(stop, '%Y-%m-%d')
+
+    if start and stop:
+        commits = [x for x in commits
+                   if x.timestamp > start and x.timestamp < stop]
+    elif start and not stop:
+        commits = [x for x in commits if x.timestamp > start]
+    elif not start and stop:
+        commits = [x for x in commits if x.timestamp < stop]
+
+    return commits
 
 def get_current_branch(checkoutdir):
     cmd = "git branch | egrep ^* | awk '{print $2}'"
@@ -468,7 +577,6 @@ def find_first_version_commit(version, checkoutdir, commits):
 
         if tc not in ab.commits:
             tc = ab.get_commit_to_test()
-            #import epdb; epdb.st()
 
         print('# searching for start of %s' % version)
 
@@ -482,6 +590,7 @@ def find_first_version_commit(version, checkoutdir, commits):
 
         # get timestamp
         CMAP[tc]['date'] = get_checkout_date(checkoutdir)
+        print('\tdate: %s' % CMAP[tc]['date'])
 
         # get the version and use as a sanity check
         (vrc, aso, ase, aversion) = get_version(checkoutdir)
@@ -512,7 +621,6 @@ def find_first_version_commit(version, checkoutdir, commits):
     lc = candidates[-1][0]
     lc_index = commits.index(lc)
     fc = commits[lc_index+1]
-    #import epdb; epdb.st()
     return fc
 
 
@@ -585,6 +693,7 @@ def main():
     if args.direction == 'forward':
         commits = [x for x in reversed(commits)]
 
+
     # mapping of commits to their timestamps
     TSMAP = {}
 
@@ -597,7 +706,6 @@ def main():
         )
         sfc_ix = commits.index(sfc)
         commits = commits[sfc_ix:]
-        #import epdb; epdb.st()
 
     ab = AnsibleBisector(commits)
     ab.negative_test = negative_test

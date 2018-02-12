@@ -1,0 +1,63 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+$script = <<SCRIPT
+echo 'root:vagrant' | chpasswd
+echo 'vagrant:vagrant' | chpasswd
+sed -i.bak 's/PasswordAuthentication\ no/PasswordAuthentication\ yes/' /etc/ssh/sshd_config
+service sshd restart
+SCRIPT
+
+ENV['VAGRANT_DEFAULT_PROVIDER'] = 'virtualbox'
+
+el6disk = './el6_secondDisk.vdi'
+el7disk = './el7_secondDisk.vdi'
+
+Vagrant.configure(2) do |config|
+
+  #config.vm.box = "centos/7"
+  #config.vm.hostname = 'el7host'
+  #config.hostmanager.enabled = true
+  #config.hostmanager.manage_host = true
+  #config.hostmanager.manage_guest = true
+  #config.hostmanager.ignore_private_ip = false
+  #config.hostmanager.include_offline = true
+  #config.vm.synced_folder '.', '/vagrant', disabled: true
+  #config.vm.provision "shell", inline: $script
+  #config.vm.network "private_network", ip: "10.0.0.107"
+
+  config.vm.provision "shell", inline: $script
+  config.hostmanager.enabled = true
+  config.hostmanager.manage_host = true
+  config.hostmanager.manage_guest = true
+  config.hostmanager.ignore_private_ip = false
+  config.hostmanager.include_offline = true
+  config.vm.synced_folder '.', '/vagrant', disabled: true
+
+  #config.vm.provider "virtualbox" do |vb|
+  #  unless File.exist?(el6disk)
+  #    vb.customize ['createhd', '--filename', el6disk, '--variant', 'Fixed', '--size', 20 * 1024]
+  #  end
+  #  unless File.exist?(el7disk)
+  #    vb.customize ['createhd', '--filename', el7disk, '--variant', 'Fixed', '--size', 20 * 1024]
+  #  end
+  #end 
+
+  config.vm.define "el6host" do |el6host|
+    el6host.vm.box = "centos/6"
+    el6host.vm.network "private_network", ip: "10.0.0.106"
+    #el6host.customize ['storageattach', :id,  '--storagectl', 'SATAController', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', el6disk]
+  end
+
+  config.vm.define "el7host" do |el7host|
+    el7host.vm.box = "centos/7"
+    el7host.vm.network "private_network", ip: "10.0.0.107"
+    el7host.vm.provider "virtualbox" do |el7vb|
+      #el7vb.customize ['storageattach', :id,  '--storagectl', 'SATAController', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', el7disk]
+      #el7vb.customize ['storageattach', :id,  '--storagectl', 'IDE Controller', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', el7disk]
+      #el7vb.customize ['storageattach', :id,  '--storagectl', 'IDEController', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', el7disk]
+      #el7vb.customize ['storageattach', :id,  '--storagectl', 'IDE', '--port', 1, '--device', 0, '--type', 'hdd', '--medium', el7disk]
+    end
+  end
+
+end

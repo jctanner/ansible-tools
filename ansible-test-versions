@@ -27,7 +27,8 @@ def test_version(version, params):
     else:
         version_dir = DEVELDIR
     hacking_script = os.path.join(version_dir, 'hacking', 'env-setup')
-    command = 'source %s >/dev/null 2>&1 ; bash %s' % (hacking_script, params)
+    command = 'source %s >/dev/null 2>&1 ; %s' % (hacking_script, params)
+    #print(command)
     #command = 'source %s >/dev/null 2>&1 ; ansible --version' % (hacking_script)
     (rc, so, se) = run_command(command, capture=False)
     return rc
@@ -86,6 +87,12 @@ def main():
             this_version = match_version(this_version, ansible_versions)
         test_versions.append(this_version)
         test_script = args.inputs[1]
+
+    if os.path.isfile(test_script):
+        if not os.access(test_script, os.X_OK):
+            os.chmod(test_script, 0o700)
+    else:
+        test_script = 'bash %s' % test_script
 
     if os.path.isfile(LOGFILE):
         os.remove(LOGFILE)

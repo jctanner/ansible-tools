@@ -7,7 +7,15 @@ import subprocess
 import sys
 
 
-def run_command(args):
+CACHEDIR = "/var/cache/ansible/ansible.checkout.clean"
+CORECACHEDIR = "/var/cache/ansible/ansible-modules-core.checkout.clean"
+EXTRASCACHEDIR = "/var/cache/ansible/ansible-modules-extras.checkout.clean"
+BASEDIR = "/var/cache/ansible/version_checkouts"
+
+
+def run_command(args, verbose):
+    if verbose:
+        print('Cmd: {}'.format(args))
     p = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
@@ -15,7 +23,42 @@ def run_command(args):
         shell=True
     )
     (so, se) = p.communicate()
+    if verbose:
+        print('rc: {}'.format(p.returncode))
+        print('stdout: {}'.format(so))
+        print('stderr: {}'.format(se))
     return (p.returncode, so, se)
+
+
+def get_clean_cache(verbose=False):
+
+    current_dir = os.path.abspath(os.curdir)
+
+    if not os.path.isdir(CACHEDIR):
+        run_command('git clone https://github.com/ansible/ansible.git'
+                    ' --recursive {0}'.format(CACHEDIR), verbose)
+    else:
+        os.chdir(CACHEDIR)
+        run_command('git pull --rebase --recurse-submodules', verbose)
+        run_command('git submodule update --recursive', verbose)
+
+    if not os.path.isdir(CORECACHEDIR):
+        run_command('git clone https://github.com/ansible/ansible-modules-core.git'
+                    ' --recursive {0}'.format(CORECACHEDIR), verbose)
+    else:
+        os.chdir(CORECACHEDIR)
+        run_command('git pull --rebase --recurse-submodules', verbose)
+        run_command('git submodule update --recursive', verbose)
+
+    if not os.path.isdir(EXTRASCACHEDIR):
+        run_command('git clone https://github.com/ansible/ansible-modules-extras.git'
+                    ' --recursive {0}'.format(EXTRASCACHEDIR), verbose)
+    else:
+        os.chdir(EXTRASCACHEDIR)
+        run_command('git pull --rebase --recurse-submodules', verbose)
+        run_command('git submodule update --recursive', verbose)
+
+    os.chdir(current_dir)
 
 
 def main():
@@ -24,13 +67,12 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args()
 
-    CACHEDIR = "/var/cache/ansible/ansible.checkout.clean"
-    BASEDIR = "/var/cache/ansible/version_checkouts"
-
     if not os.path.isdir(BASEDIR):
         os.makedirs(BASEDIR)
 
-    (rc, so, se) = run_command('ansible-list-versions')
+    get_clean_cache(args.verbose)
+
+    (rc, so, se) = run_command('ansible-list-versions', args.verbose)
     VERSIONS = [x.strip() for x in so.split('\n')
                 if x.strip() and 'devel' not in x]
 
@@ -42,7 +84,7 @@ def main():
         if not os.path.isdir(dstdir):
             #shutil.copytree(CACHEDIR,dstdir)
             cmd = 'cp -Rp {} {}'.format(CACHEDIR, dstdir)
-            (rc, so, se) = run_command(cmd)
+            (rc, so, se) = run_command(cmd, args.verbose)
             if rc != 0:
                 print('ERROR: {}'.format(str(so) + str(se)))
                 sys.exit(rc)
@@ -51,13 +93,7 @@ def main():
             continue
 
         cmd = 'cd %s; git checkout -f tags/%s' % (dstdir, V)
-        if args.verbose:
-            print('cmd: %s' % cmd)
-        (rc, so, se) = run_command(cmd)
-        if args.verbose:
-            print('rc: %s' % rc)
-            print('so: %s' % so)
-            print('se: %s' % se)
+        (rc, so, se) = run_command(cmd, args.verbose)
 
         # any submodules?
         gmfile = os.path.join(dstdir, '.gitmodules')
@@ -69,14 +105,27 @@ def main():
             if os.path.isdir(sysdir):
                 continue
             #import epdb; epdb.st()
+            cmd = 'cd {}; cp -Rp {}/* {}/.git* {}/'.format(dstdir, CORECACHEDIR, CORECACHEDIR, 'lib/ansible/modules/core')
+            (rc, so, se) = run_command(cmd, args.verbose)
+
+            cmd = 'cd {}; cp -Rp {}/* {}/.git* {}/'.format(dstdir, EXTRASCACHEDIR, EXTRASCACHEDIR, 'lib/ansible/modules/extras')
+            (rc, so, se) = run_command(cmd, args.verbose)
+
+            with open(gmfile) as gitmodule_file:
+                gitmodule_data = gitmodule_file.read()
+                if '[submodule "v2' in gitmodule_data:
+                    cmd = 'cd {}; cp -Rp {}/* {}/.git* {}/'.format(dstdir, CORECACHEDIR, CORECACHEDIR, 'v2/ansible/modules/core')
+                    (rc, so, se) = run_command(cmd, args.verbose)
+
+                    cmd = 'cd {}; cp -Rp {}/* {}/.git* {}/'.format(dstdir, EXTRASCACHEDIR, EXTRASCACHEDIR, 'v2/ansible/modules/extras')
+                    (rc, so, se) = run_command(cmd, args.verbose)
+
+
+            cmd = 'cd %s; git submodule absorbgitdirs' % dstdir
+            (rc, so, se) = run_command(cmd, args.verbose)
+
             cmd = 'cd %s; git submodule update --init --recursive' % dstdir
-            if args.verbose:
-                print('cmd: %s' % cmd)
-            (rc, so, se) = run_command(cmd)
-            if args.verbose:
-                print('rc: %s' % rc)
-                print('so: %s' % so)
-                print('se: %s' % se)
+            (rc, so, se) = run_command(cmd, args.verbose)
 
 
 if __name__ == "__main__":

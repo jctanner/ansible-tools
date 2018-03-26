@@ -11,6 +11,6 @@
 IDS=$(docker ps -a | egrep -v ^CONTAINER | awk '{print $1}')
 for ID in $IDS; do
     docker kill $ID
-    docker rm $ID
+    docker rm -f $ID
 done
 rm -f /tmp/cid_httptester

@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+
+import functools
+import re
+import sys
+
+from distutils.version import LooseVersion
+from packaging.version import Version
+
+
+# ('v2.4.4-0.2.rc1', LooseVersion ('2.4.4-0.2.rc1'))
+# ('v2.4.4.0-1', <Version('2.4.4.0.post1')>),
+
+class Version2(Version):
+
+    @property
+    def version(self):
+		# (Epdb) pp vmap['v2.4.0.0-0.4.rc4'].version
+		# [2, 4, 0, 0, '-', 0, 4, 'rc', 4]
+        version = self.base_version
+        return version
+
+
+def main():
+
+
+    versions = sys.stdin.read()
+    versions = versions.split()
+    versions = [x.strip() for x in versions if x.strip()]
+
+    vmap = dict(zip(versions[:], versions[:]))
+    devel = None
+    usev = False
+
+    for k,v in vmap.items():
+        if v.startswith('devel'):
+            devel = k
+            continue
+        if v.startswith('v'):
+            usev = True
+            v = v[1:]
+
+        # Try Version or LooseVersion where possible
+        for x in ['Version', 'LooseVersion']:
+            try:
+                if x == 'Version' and v.startswith('2.5'):
+                    v = Version2(v)
+                    converted = True
+                    break
+                elif x == 'LooseVersion':
+                    v = LooseVersion(v)
+                    converted = True
+                    break
+            except Exception as e:
+                pass
+
+        vmap[k] = v
+
+    # save devel for last
+    if devel:
+        vmap.pop(devel, None)
+
+    # sort by version
+    _versions = sorted(vmap.items(), key=lambda tup: tup[1])
+
+    # get the original keys
+    final_sorted_versions = [x[0] for x in _versions] + [devel]
+
+    for fv in final_sorted_versions:
+        print(fv)
+
+
+if __name__ == "__main__":
+    main()

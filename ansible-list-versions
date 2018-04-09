@@ -19,6 +19,7 @@ cd $CACHEDIR
 HEAD=$(git log --oneline -1 | awk '{print $1}')
 VERSIONS=$(git tag -l | fgrep -v alpha | fgrep -v beta)
 VERSIONS="$VERSIONS devel-$HEAD"
+VERSIONS=$(echo $VERSIONS | ansible-version-sort)
 
 for VERSION in $VERSIONS; do
     echo $VERSION

@@ -55,6 +55,55 @@ EOF
 chmod +x inventory.py
 
 #########################################
+#   LARGE INVENTORY SCRIPT
+#########################################
+
+cat << EOF > inventory_scale.py
+#!/usr/bin/env python
+
+import json
+import os
+import sys
+import uuid
+from pprint import pprint
+
+MAXHOSTS = os.environ.get('MAXHOSTS') or 10
+if not isinstance(MAXHOSTS, int):
+    MAXHOSTS = int(MAXHOSTS)
+
+MAXITEMS = os.environ.get('MAXITEMS') or 10
+if not isinstance(MAXITEMS, int):
+    MAXITEMS = int(MAXITEMS)
+
+INV = {}
+INV['_meta'] = {'hostvars': {}}
+
+groups = ['all']
+hosts = ['x' + str(x) for x in range(0, MAXHOSTS)]
+
+for idx, group in enumerate(groups):
+    INV[group] = {}
+    INV[group]['children'] = []
+    INV[group]['vars'] = {}
+    INV[group]['hosts'] = [x for x in hosts]
+
+    for host in hosts:
+        INV['_meta']['hostvars'][host] = {}
+        INV['_meta']['hostvars'][host]['ansible_connection'] = 'local'
+        INV['_meta']['hostvars'][host]['ansible_ssh_host'] = 'el7host'
+        INV['_meta']['hostvars'][host]['ansible_ssh_user'] = 'root'
+        INV['_meta']['hostvars'][host]['ansible_ssh_private_key_file'] = '~/.ssh/id_TEST'
+
+        items = [str(x) for x in range(0, MAXITEMS)]
+        items = ['/opt/test/%s' % host + x for x in items]
+        items = [x + '/' + str(uuid.uuid4()) for x in items]
+        INV['_meta']['hostvars'][host]['TESTLIST'] = items
+
+print json.dumps(INV, indent=2)
+EOF
+chmod +x inventory_scale.py
+
+#########################################
 #   CONFIG
 #########################################
 

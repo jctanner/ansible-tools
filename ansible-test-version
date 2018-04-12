@@ -37,6 +37,7 @@ else
     exit 1
 fi
 
+echo "# $(pwd)"
 chmod +x $TESTSCRIPT
 ./$TESTSCRIPT
 RC=$?

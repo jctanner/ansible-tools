@@ -4,35 +4,27 @@
 
 Copy the sources to your docker host and build the container:
 
-	# docker build --rm -t <username>/ssh .
+	# docker build --rm -t <username>/cisco-ios .
 
 ## Running
 
-You can run the image on the registry without rebuilding with the following 
-command. By default, it will bind port 2200 on the host to 22 within the container.
-
-```
-# sudo atomic run docker.io/fedora/ssh
+```shell
+ansible-playbook -v -i inventory -e "total_nodes=10" build_network.yml
 ```
 
-To run the container, binding to port 2200 on the host:
+```yaml
+# build_network.yml
+- hosts: localhost
+  gather_facts: False
+  vars:
+      container_image: jctanner:cisco-ios
+      container_ssh_password: redhat1234
+  tasks:
+      - debug: var=total_nodes
+      - name: run the containers
+        docker_container:
+            name: "{{ item }}"
+            image: "{{ container_image }}"
+            state: started
+        with_sequence: start=0 end={{ total_nodes|default('100') }} format=switch_%02x
 ```
-# docker run --name ssh -d -p 2200:22 <username>/ssh
-```
-This will create a user named `user` with a randomly generated
-password.  You can obtain the password via `docker logs`:
-
-    # docker logs ssh | grep 'ssh user password'
-    ssh user password: O2WXqqQ1CWwXHxrLZGip
-
-You can set a specific password using the `SSH_USERPASS` environment
-variable:
-
-    # docker run --name ssh -d -p 2200:22 \
-      -e SSH_USERPASS=secret <username>/ssh
-
-To connect to this container:
-
-    # ssh -p 2200 user@localhost
-    user@localhost's password: 
-    [user@d3a244022ca5 ~]$ 

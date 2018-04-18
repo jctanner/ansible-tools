@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# copy running-config startup-config
+
+exit 0

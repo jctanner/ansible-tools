@@ -1,0 +1,36 @@
+#!/usr/bin/env python
+
+import sys
+
+def main():
+    if sys.argv[1] == "version":
+        print('Version 999')
+        print('Cisco 3745 (R7000) processor (revision 2.0) with 245760K/16384K bytes of memory.')
+    elif sys.argv[1] == "running-config":
+        #print('Building configuration...')
+        #print('')
+        #print('Current configuration : 184 bytes')
+        #print('!')
+        print('interface GigabitEthernet0/0')
+        print(' description Gigabit0')
+        print(' no ip address')
+        print(' load-interval 30')
+        print(' duplex full')
+        print(' speed 100')
+        print(' pppoe enable group global')
+        print(' pppoe-client dial-pool-number 10')
+        print('end')
+    elif ' '.join(sys.argv[1:4]) == "ip interface brief":
+	print('Interface     IP-Address     OK?  Method  Status                  Protocol')
+	print('Ethernet0     10.108.00.5    YES  NVRAM   up                      up      ')
+	print('Ethernet1     unassigned     YES  unset   administratively down   down    ')
+	print('Loopback0     10.108.200.5   YES  NVRAM   up                      up      ')
+	print('Serial0       10.108.100.5   YES  NVRAM   up                      up      ')
+	print('Serial1       10.108.40.5    YES  NVRAM   up                      up      ')
+	print('Serial2       10.108.100.5   YES  manual  up                      up      ')
+	print('Serial3       unassigned     YES  unset   administratively down   down    ')
+
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()

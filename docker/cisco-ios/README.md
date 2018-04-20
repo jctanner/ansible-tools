@@ -17,7 +17,7 @@ ansible-playbook -v -i inventory -e "total_nodes=10" build_network.yml
 - hosts: localhost
   gather_facts: False
   vars:
-      container_image: jctanner:cisco-ios
+      container_image: jctanner/cisco-ios
       container_ssh_password: redhat1234
   tasks:
       - debug: var=total_nodes

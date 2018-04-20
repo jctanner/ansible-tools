@@ -7,7 +7,9 @@ LABEL RUN='docker run --name ssh -d -p 2200:22 $IMAGE'
 EXPOSE 22
 
 RUN dnf -y update && dnf -y install openssh-server passwd && dnf clean all
-RUN dnf -y install python2
+RUN dnf -y install which && dnf clean all
+RUN dnf -y install python2 && dnf clean all
+RUN dnf -y install snoopy && dnf clean all
 #RUN dnf -y install rsync
 #RUN dnf -y install ansible
 #RUN rpm -e --nodeps ansible
@@ -17,6 +19,7 @@ RUN echo "root:redhat1234" | chpasswd
 RUN useradd cisco
 RUN echo "cisco:redhat1234" | chpasswd
 #RUN mkdir /home/cisco
+COPY bashrc /home/cisco/.bashrc
 RUN chown -R cisco:cisco /home/cisco
 COPY home.cisco.bin /home/cisco/bin
 RUN chmod +x /home/cisco/bin/*

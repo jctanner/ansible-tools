@@ -1,0 +1,12 @@
+# .bashrc
+
+# Source global definitions
+if [ -f /etc/bashrc ]; then
+        . /etc/bashrc
+fi
+
+# disable the builtin "enable" so that ~bin/enable is picked up
+enable -n enable
+
+# match the typical prompt on IOS
+PS1="\h> "

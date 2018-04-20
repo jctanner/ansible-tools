@@ -7,6 +7,7 @@ LABEL RUN='docker run --name ssh -d -p 2200:22 $IMAGE'
 EXPOSE 22
 
 RUN dnf -y update && dnf -y install openssh-server passwd && dnf clean all
+RUN dnf -y install procps-ng && dnf clean all
 RUN dnf -y install which && dnf clean all
 RUN dnf -y install python2 && dnf clean all
 RUN dnf -y install snoopy && dnf clean all
@@ -26,6 +27,9 @@ RUN chmod +x /home/cisco/bin/*
 RUN chown -R cisco:cisco /home/cisco/bin
 
 COPY entrypoint.sh /entrypoint.sh
+COPY snoopy.ini /etc/snoopy.ini
+RUN /usr/sbin/snoopy-enable
 
 ENTRYPOINT ["/entrypoint.sh"]
+ENV LD_PRELOAD=/usr/lib64/libsnoopy.so
 CMD ["/usr/sbin/sshd", "-D"]

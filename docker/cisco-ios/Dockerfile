@@ -1,6 +1,7 @@
 # https://github.com/fedora-cloud/Fedora-Dockerfiles/blob/master/systemd/systemd/Dockerfile
 
-FROM docker.io/fedora
+#FROM docker.io/fedora
+FROM fedora:rawhide
 MAINTAINER http://fedoraproject.org/wiki/Cloud
 
 # Atomic RUN label, enables the atomic cli
@@ -20,6 +21,7 @@ rm -f /lib/systemd/system/anaconda.target.wants/*;
 
 
 RUN dnf -y install openssh-server
+RUN dnf -y install openssh-clients
 RUN systemctl enable sshd
 RUN dnf -y install rsyslog 
 RUN systemctl enable rsyslog
@@ -30,6 +32,9 @@ RUN dnf -y install procps-ng
 RUN dnf -y install which
 RUN dnf -y install python2
 RUN dnf -y install snoopy
+RUN dnf -y install net-tools
+RUN dnf -y install bind-utils
+RUN dnf -y install iproute
 
 RUN echo "root:redhat1234" | chpasswd
 RUN useradd cisco
@@ -48,5 +53,6 @@ RUN /usr/sbin/snoopy-enable
 #ENV LD_PRELOAD=/usr/lib64/libsnoopy.so
 #CMD ["/usr/sbin/sshd", "-D"]
 
+CMD rm -f /var/run/nologin
 VOLUME [ "/sys/fs/cgroup", "/tmp", "/run" ]
 CMD ["/usr/sbin/init"]

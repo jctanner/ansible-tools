@@ -1,4 +1,4 @@
-# dockerfiles-fedora-ssh
+# IOS simulator
 
 ## Building
 

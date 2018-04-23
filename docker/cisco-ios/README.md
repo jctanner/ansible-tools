@@ -26,5 +26,8 @@ ansible-playbook -v -i inventory -e "total_nodes=10" build_network.yml
             name: "{{ item }}"
             image: "{{ container_image }}"
             state: started
+            privileged: True
+            volumes:
+                - /sys/fs/cgroup:/sys/fs/cgroup:ro
         with_sequence: start=0 end={{ total_nodes|default('100') }} format=switch_%02x
 ```

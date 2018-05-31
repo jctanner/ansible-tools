@@ -10,13 +10,24 @@ DEVELDIR = "/var/cache/ansible/ansible.checkout.clean"
 BASEDIR = "/var/cache/ansible/version_checkouts"
 LOGFILE = "returncodes.txt"
 
-def run_command(args, capture=False, shell=True):
+def run_command(args, env=None, capture=False, shell=True):
+    kwargs = {'shell': True}
+    if capture:
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.PIPE
+    if env:
+        kwargs['env'] = env
+    p = subprocess.Popen(args, **kwargs)
+
+    '''
     if not capture:
         p = subprocess.Popen(args, shell=True)
     else:
         p = subprocess.Popen(args, shell=True,
                              stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
+                             stderr=subprocess.PIPE,
+                             env=env)
+    '''
     (so, se) = p.communicate()
     return (p.returncode, so, se)
 
@@ -30,8 +41,11 @@ def test_version(version, params):
     command = 'source %s >/dev/null 2>&1 ; %s' % (hacking_script, params)
     #print(command)
     #command = 'source %s >/dev/null 2>&1 ; ansible --version' % (hacking_script)
+    #import epdb; epdb.st()
+    env = os.environ.copy()
+    env['ANSIBLE_TEST_VERSION'] = version
     print ('# %s' % command)
-    (rc, so, se) = run_command(command, capture=False)
+    (rc, so, se) = run_command(command, capture=False, env=env)
     return rc
 
 def list_versions(args):

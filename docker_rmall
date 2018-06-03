@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#(test_env)[jtanner@fedmac example]$ docker ps -a
+#CONTAINER ID        IMAGE                        COMMAND                  CREATED             STATUS                        PORTS               NAMES
+#fbae8091f473        centos:7                     "sh -c 'while true; d"   37 seconds ago      Created                                           ansible_static_1
+#19883c56441a        centos:7                     "sh -c 'while true; d"   41 seconds ago      Exited (137) 21 seconds ago                       ansible_gulp_1
+#f5ebce2b168d        centos:7                     "sh -c 'while true; d"   43 seconds ago      Exited (137) 21 seconds ago                       ansible_django_1
+#8245f4084cd2        centos:7                     "sh -c 'while true; d"   51 seconds ago      Exited (137) 21 seconds ago                       ansible_postgresql_1
+#b215bf80e56e        ansible/ansible:centos6      "/sbin/init"             20 hours ago        Up 20 hours
+
+IDS=$(docker images | egrep -v ^IMAGE | awk '{print $3}')
+for ID in $IDS; do
+    docker rmi $ID
+done

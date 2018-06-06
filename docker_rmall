@@ -8,7 +8,7 @@
 #8245f4084cd2        centos:7                     "sh -c 'while true; d"   51 seconds ago      Exited (137) 21 seconds ago                       ansible_postgresql_1
 #b215bf80e56e        ansible/ansible:centos6      "/sbin/init"             20 hours ago        Up 20 hours
 
-IDS=$(docker images | egrep -v ^IMAGE | awk '{print $3}')
+IDS=$(docker images -a | egrep -v ^IMAGE | awk '{print $3}')
 for ID in $IDS; do
-    docker rmi $ID
+    docker rmi --force $ID
 done

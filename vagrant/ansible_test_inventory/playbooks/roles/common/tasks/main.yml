@@ -1,0 +1,43 @@
+- name: copy the vimrc
+  copy:
+    src: vimrc
+    dest: /etc/vimrc
+    mode: 0777
+  become: True
+
+- name: install epel
+  package:
+    name: epel-release
+    state: present
+  become: True
+
+- set_fact:
+    common_packages:
+      - python-pip
+      - git
+      - vim-enhanced
+      - strace
+      - net-tools
+      - lsof
+      - iptraf-ng
+      - bc
+      - sysstat
+
+- name: install common packages
+  package:
+    name: "{{ common_packages|join(',') }}"
+    state: present
+  become: True
+
+- name: install towercli
+  pip:
+    name: ansible-tower-cli
+    state: latest
+  become: True
+
+- name: turn on sysstat
+  service:
+    name: sysstat
+    state: running
+    enabled: True
+  become: True

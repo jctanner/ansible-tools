@@ -1,0 +1,24 @@
+- name: make sure python is installed
+  hosts: all
+  gather_facts: False
+  tasks:
+    - raw: which python || sudo dnf -y install python2
+
+- name: add the roles
+  hosts: all
+  gather_facts: False
+  roles:
+    - common
+
+- name: install docker
+  hosts: all
+  gather_facts: False
+    - shell: whoami
+    - shell: sudo dnf -y update
+    - shell: which docker || sudo dnf -y install docker
+    - shell: sudo docker ps || sudo sytemctl start docker
+    - copy:
+        src: spawncontainers.sh
+        dest: /root/spawncontainers.sh
+        mode: 0777
+

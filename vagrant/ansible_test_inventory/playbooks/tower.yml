@@ -1,0 +1,5 @@
+- name: add the roles
+  hosts: all
+  gather_facts: False
+  roles:
+    - common

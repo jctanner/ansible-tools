@@ -15,13 +15,19 @@ fi
 
 download_versions() {
     URL="https://releases.ansible.com/ansible"
-    TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest)
+    if [ "$#" -eq 0 ]; then
+        TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | tail -n1)
+    else
+        TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | fgrep $1)
+    fi
     for TAR in $TARS; do
         #echo $TAR
         TARDST="$TARCACHE/$TAR"
         TARSRC="$URL/$TAR"
         if [[ ! -f $TARDST ]]; then
-            curl --silent -o $TARDST $TARSRC
+            echo $TARSRC
+            #curl --silent -o $TARDST $TARSRC
+            curl -o $TARDST $TARSRC
         fi
     done
 }
@@ -44,22 +50,34 @@ create_hacking() {
         #echo $DST
         if [[ ! -d $DST ]]; then
             mkdir -p $DST
-            curl --silent -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+            #curl --silent -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+            curl -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
         fi
     done
 }
 
-download_versions
-extract_versions
-create_hacking
+#download_versions
+#extract_versions
+#create_hacking
 
 if [[ -z "$ANSIBLE_VERSION" ]]; then
     if [[ -f $CACHE/version.lock ]]; then
         ANSIBLE_VERSION=$(cat $CACHE/version.lock)
+        download_versions $ANSIBLE_VERSION
+        extract_versions
+        create_hacking
     else
+        download_versions
+        extract_versions
+        create_hacking
         ANSIBLE_VERSION=$(ls $EXTRACTCACHE | tail -n1 | sed 's/ansible-//g')
     fi
+else
+    download_versions $ANSIBLE_VERSION
+    extract_versions
+    create_hacking
 fi
+
 
 echo "------------------------------------------------" >> $CACHE/run.log
 echo "DATE:$(date)" >> $CACHE/run.log

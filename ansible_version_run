@@ -1,0 +1,63 @@
+#!/bin/bash
+
+#CACHE=".vcache"
+CACHE="/tmp/vcache"
+TARCACHE="$CACHE/tars"
+EXTRACTCACHE="$CACHE/extracted"
+
+if [[ ! -d $TARCACHE ]]; then
+    mkdir -p $TARCACHE
+fi
+if [[ ! -d $EXTRACTCACHE ]]; then
+    mkdir -p $EXTRACTCACHE
+fi
+
+download_versions() {
+    URL="https://releases.ansible.com/ansible"
+    TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g')
+    for TAR in $TARS; do
+        #echo $TAR
+        TARDST="$TARCACHE/$TAR"
+        TARSRC="$URL/$TAR"
+        if [[ ! -f $TARDST ]]; then
+            curl --silent -o $TARDST $TARSRC
+        fi
+    done
+}
+
+extract_versions() {
+    for TAR in $(ls $TARCACHE); do
+        #echo $TAR
+        DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')"
+        #echo $DST
+        if [[ ! -d $DST ]]; then
+            tar xzvf $TARCACHE/$TAR -C $EXTRACTCACHE
+        fi
+    done
+}
+
+create_hacking() {
+    for TAR in $(ls $TARCACHE); do
+        #echo $TAR
+        DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')/hacking"
+        #echo $DST
+        if [[ ! -d $DST ]]; then
+            mkdir -p $DST
+            curl --silent -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+        fi
+    done
+}
+
+download_versions
+extract_versions
+create_hacking
+
+BIN_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/bin"
+HACKING_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/hacking"
+if [[ ! -d $HACKING_DIR ]]; then
+    echo "$HACKING_DIR does not exist"
+    exit 255
+fi
+
+source $HACKING_DIR/env-setup > /dev/null 2>&1
+$BIN_DIR/ansible-playbook $@

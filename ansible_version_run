@@ -14,7 +14,7 @@ fi
 
 download_versions() {
     URL="https://releases.ansible.com/ansible"
-    TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g')
+    TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest)
     for TAR in $TARS; do
         #echo $TAR
         TARDST="$TARCACHE/$TAR"
@@ -51,6 +51,14 @@ create_hacking() {
 download_versions
 extract_versions
 create_hacking
+
+if [[ -z "$ANSIBLE_VERSION" ]]; then
+    if [[ -f $CACHE/version.lock ]]; then
+        ANSIBLE_VERSION=$(cat $CACHE/version.lock)
+    else
+        ANSIBLE_VERSION=$(ls $EXTRACTCACHE | tail -n1 | sed 's/ansible-//g')
+    fi
+fi
 
 BIN_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/bin"
 HACKING_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/hacking"

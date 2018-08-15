@@ -1,7 +1,8 @@
 #!/bin/bash
 
 #CACHE=".vcache"
-CACHE="/tmp/vcache"
+#CACHE="/tmp/vcache"
+CACHE="/var/lib/awx/projects/.vcache"
 TARCACHE="$CACHE/tars"
 EXTRACTCACHE="$CACHE/extracted"
 
@@ -31,7 +32,7 @@ extract_versions() {
         DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')"
         #echo $DST
         if [[ ! -d $DST ]]; then
-            tar xzvf $TARCACHE/$TAR -C $EXTRACTCACHE
+            tar xzf $TARCACHE/$TAR -C $EXTRACTCACHE
         fi
     done
 }
@@ -60,6 +61,12 @@ if [[ -z "$ANSIBLE_VERSION" ]]; then
     fi
 fi
 
+echo "------------------------------------------------" >> $CACHE/run.log
+echo "DATE:$(date)" >> $CACHE/run.log
+echo "VERSION:$ANSIBLE_VERSION" >> $CACHE/run.log
+echo "CMD:$(basename $0) $@" >> $CACHE/run.log
+echo "ENV1:$(env)" >> $CACHE/run.log
+
 BIN_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/bin"
 HACKING_DIR="$EXTRACTCACHE/ansible-${ANSIBLE_VERSION}/hacking"
 if [[ ! -d $HACKING_DIR ]]; then
@@ -68,4 +75,5 @@ if [[ ! -d $HACKING_DIR ]]; then
 fi
 
 source $HACKING_DIR/env-setup > /dev/null 2>&1
+echo "ENV2:$(env)" >> $CACHE/run.log
 $BIN_DIR/ansible-playbook $@

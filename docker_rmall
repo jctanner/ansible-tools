@@ -12,3 +12,4 @@ IDS=$(docker images -a | egrep -v ^IMAGE | awk '{print $3}')
 for ID in $IDS; do
     docker rmi --force $ID
 done
+docker volume prune -f

@@ -14,3 +14,4 @@ for ID in $IDS; do
     docker rm -f $ID
 done
 rm -f /tmp/cid_httptester
+docker volume prune -f

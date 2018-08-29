@@ -94,4 +94,4 @@ fi
 
 source $HACKING_DIR/env-setup > /dev/null 2>&1
 echo "ENV2:$(env)" >> $CACHE/run.log
-$BIN_DIR/ansible-playbook $@
+$BIN_DIR/$(basename $0) $@

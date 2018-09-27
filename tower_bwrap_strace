@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# * yum install strace ... don't forget this =)
+# * Place this file into /usr/local/bin/bwrap so that it takes
+#   precedence over /bin/bwrap in the path.
+# * chmod +x /usr/local/bin/bwrap
+# * You will probably neeed to create the STRACEDIR manually
+#   and chmod 777 before using it the first time.
+# * Run the demo-project sync to validate this is working
+
+echo "STARTING" >> /tmp/bwrap.log
+echo "INARGS: $@" >> /tmp/bwrap.log
+STRACEDIR=/var/lib/awx/projects/strace.out
+STRACEARGS="strace -s 100000 -ffttvo $STRACEDIR/pid"
+NEWARGS=$(echo "$@" | sed "s|ansible-playbook|$STRACEARGS ansible-playbook|")
+if [[ ! -d $STRACEDIR ]]; then
+    mkdir $STRACEDIR
+fi
+chmod 777 $STRACEDIR
+rm -rf $STRACEDIR/*
+echo "NEWARGS: $NEWARGS" >> /tmp/bwrap.log
+
+/bin/bwrap $NEWARGS

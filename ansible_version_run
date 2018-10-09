@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# ansible_version_run - a hackish script to quickly test various ansible versions.
+#
+# Install:
+#   1) ensure ~/bin is in your $PATH
+#   2) copy the script into ~/bin twice, named ansible and ansible-playbook
+#   3) export ANSBILE_VERSION as whatever version you want to use, it defaults to latest
+#   4) run ansible or ansible-playbook (it will take a few seconds to cache the tarball)
+
 #CACHE=".vcache"
 #CACHE="/tmp/vcache"
 CACHE="/var/lib/awx/projects/.vcache"

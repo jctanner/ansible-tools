@@ -1,3 +1,7 @@
+- name: get the distro name
+  shell: cat /etc/redhat-release | awk '{print $1}'
+  register: distro_name
+
 - name: copy the vimrc
   copy:
     src: vimrc
@@ -10,6 +14,8 @@
     name: epel-release
     state: present
   become: True
+  when: "distro_name.stdout|lower in ['centos', 'rhel']"
+  ignore_errors: True
 
 - set_fact:
     common_packages:

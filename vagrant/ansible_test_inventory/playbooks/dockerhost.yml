@@ -3,6 +3,7 @@
   gather_facts: False
   tasks:
     - raw: which python || sudo dnf -y install python2
+    - raw: rpm -q python2-policycoreutils || sudo dnf -y install python2-policycoreutils
 
 - name: add the roles
   hosts: all
@@ -13,12 +14,18 @@
 - name: install docker
   hosts: all
   gather_facts: False
-    - shell: whoami
-    - shell: sudo dnf -y update
-    - shell: which docker || sudo dnf -y install docker
-    - shell: sudo docker ps || sudo sytemctl start docker
-    - copy:
+  tasks:
+    - name: check uid
+      shell: whoami
+    - name: update system packages
+      shell: sudo dnf -y update
+    - name: install docker
+      shell: which docker || sudo dnf -y install docker
+    - name: start docker
+      shell: sudo docker ps || sudo sytemctl restart docker
+    - name: copy the container spawn script
+      copy:
         src: spawncontainers.sh
-        dest: /root/spawncontainers.sh
+        dest: /tmp/spawncontainers.sh
         mode: 0777
 

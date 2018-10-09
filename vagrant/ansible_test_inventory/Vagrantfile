@@ -38,6 +38,11 @@ Vagrant.configure(2) do |config|
       libvirt.memory = 4096
     end
 
+    el7host.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/default.yml"
+      ansible.raw_arguments = ["-v"]
+    end
+
   end
 
   config.vm.define "tower" do |tower|

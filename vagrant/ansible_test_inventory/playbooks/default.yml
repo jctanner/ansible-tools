@@ -1,0 +1,11 @@
+- name: add the roles
+  hosts: all
+  gather_facts: False
+  roles:
+    - common
+  tasks:
+    - name: copy the inventory script
+      copy:
+        src: docker_inventory.py
+        dest: /tmp/docker_inventory.py
+        mode: 0777

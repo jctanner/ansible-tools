@@ -1,0 +1,23 @@
+- hosts: all
+  connection: local
+  gather_facts: False
+  become: True
+  tasks:
+    - name: wipe out the rules
+      raw: tc qdisc del dev eth1 root
+      ignore_errors: True
+    - name: add delay to the last host 
+      script: slowport {{ ansible_port }}
+      when: "{{ inventory_hostname == groups['all'][-1] }}"
+
+- hosts: all
+  gather_facts: True
+  pre_tasks:
+    - name: create the sync dir
+      file:
+        path: /usr/local/sync/
+        state: directory
+  tasks:
+    - name: Check for /usr/local/sync (Target Directory)
+      stat: path=/usr/local/sync/
+      register: syncdir

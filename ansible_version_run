@@ -23,19 +23,21 @@ fi
 
 download_versions() {
     URL="https://releases.ansible.com/ansible"
+    curl --silent -o $CACHE/releases.txt ${URL}/
     if [ "$#" -eq 0 ]; then
-        TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | tail -n1)
+        #echo "GETTING TARS"
+        TARS=$(egrep -o 'href=.*\.gz"' $CACHE/releases.txt | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | tail -n1)
     else
-        TARS=$(curl ${URL}/ 2>/dev/null | egrep -o 'href=.*\.gz"' | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | fgrep $1)
+        TARS=$(egrep -o 'href=.*\.gz"' $CACHE/releases.txt | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | fgrep $1)
     fi
     for TAR in $TARS; do
         #echo $TAR
         TARDST="$TARCACHE/$TAR"
         TARSRC="$URL/$TAR"
         if [[ ! -f $TARDST ]]; then
-            echo $TARSRC
-            #curl --silent -o $TARDST $TARSRC
-            curl -o $TARDST $TARSRC
+            #echo $TARSRC
+            curl --silent -o $TARDST $TARSRC
+            #curl -o $TARDST $TARSRC
         fi
     done
 }
@@ -58,8 +60,8 @@ create_hacking() {
         #echo $DST
         if [[ ! -d $DST ]]; then
             mkdir -p $DST
-            #curl --silent -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
-            curl -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+            curl --silent -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+            #curl -o $DST/env-setup https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
         fi
     done
 }

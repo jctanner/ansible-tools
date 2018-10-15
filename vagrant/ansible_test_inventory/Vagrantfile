@@ -21,30 +21,45 @@ Vagrant.configure(2) do |config|
   config.hostmanager.include_offline = true
   config.vm.synced_folder '.', '/vagrant', disabled: true
 
+  # should only be used as a remote node
   config.vm.define "el6host" do |el6host|
     el6host.vm.box = "centos/6"
     el6host.vm.network "private_network", ip: "10.0.0.106"
   end
 
+  # A control node or a remote node
   config.vm.define "el7host" do |el7host|
     el7host.vm.box = "centos/7"
     el7host.vm.network "private_network", ip: "10.0.0.107"
-
     el7host.vm.provider "virtualbox" do |el7vb|
     end
-
     el7host.vm.provider :libvirt do |libvirt|
-      libvirt.cpus = 2
-      libvirt.memory = 4096
+      libvirt.cpus = 1
+      libvirt.memory = 2048
     end
-
     el7host.vm.provision "ansible" do |ansible|
       ansible.playbook = "playbooks/default.yml"
       ansible.raw_arguments = ["-v"]
     end
-
   end
 
+  # A machine for testing the latest and greatest
+  config.vm.define "f28host" do |f28host|
+    f28host.vm.box = "fedora/28-cloud-base"
+    f28host.vm.network "private_network", ip: "10.0.0.117"
+    f28host.vm.provider "virtualbox" do |el7vb|
+    end
+    f28host.vm.provider :libvirt do |libvirt|
+      libvirt.cpus = 2
+      libvirt.memory = 4096
+    end
+    f28host.vm.provision "ansible" do |ansible|
+      ansible.playbook = "playbooks/default.yml"
+      ansible.raw_arguments = ["-v"]
+    end
+  end
+
+  # You will need a license to activate this
   config.vm.define "tower" do |tower|
     tower.vm.provider :libvirt do |libvirt|
         libvirt.cpus = 2
@@ -58,6 +73,7 @@ Vagrant.configure(2) do |config|
     end
   end
 
+  # This gives you a configurable number of fake endpoints
   config.vm.define "dockerhost" do |dockerhost|
     dockerhost.vm.provider :libvirt do |libvirt|
       libvirt.cpus = 2

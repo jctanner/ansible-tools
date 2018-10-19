@@ -33,6 +33,19 @@ def split_executor_line(line):
     # 5502 1539307714.25537: done running TaskExecutor() for sshd_250/TASK: wipe out the rules [525400a6-0421-65e9-9a84-00000000002e]
 
     parts = line.split()
+    if parts[4] != '|' and not parts[0].isdigit():
+        orig_parts = parts[:]
+        teidx = parts.index('TaskExecutor()')
+        if 'done running TaskExecutor' in line:
+            parts = parts[teidx-4:]
+        else:
+            parts = parts[teidx-3:]
+        if not parts[0].isdigit():
+            badchars = [x for x in parts[0] if not x.isdigit()]
+            #safechars = parts[0].split(badchars[-1])[-1]
+            parts[0] = parts[0].split(badchars[-1])[-1]
+            #import epdb; epdb.st()
+
     if parts[4] == '|':
         # pylogging
         date = parts[0]
@@ -47,7 +60,11 @@ def split_executor_line(line):
         time = None
         ppid = None
         uid = None
-        pid = int(parts[0])
+        try:
+            pid = int(parts[0])
+        except Exception as e:
+            print(e)
+            import epdb; epdb.st()
         ts = float(parts[1].replace(':', ''))
 
     uuid = None

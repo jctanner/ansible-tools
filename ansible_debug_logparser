@@ -15,6 +15,7 @@
 #       ./ansible_debug_logparser ansible_syslog.log ansible_stdout.log
 #
 
+import argparse
 import csv
 import os
 import re
@@ -96,7 +97,7 @@ def split_executor_line(line):
 def split_ssh_exec(line):
     '''Chop all of the info out of an ssh connection string'''
 
-    # <dockerhost> SSH: EXEC sshpass -d90 ssh -vvv -C -o ControlMaster=auto 
+    # <dockerhost> SSH: EXEC sshpass -d90 ssh -vvv -C -o ControlMaster=auto
     #   -o ControlPersist=60s -o StrictHostKeyChecking=no -o Port=33017
     #   -o User=root -o ConnectTimeout=10 -o ControlPath=/home/vagrant/.ansible/cp/da9b210846
     #   dockerhost '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
@@ -116,7 +117,7 @@ def split_ssh_exec(line):
     if 'sshpass' in line:
         sshpass = True
     else:
-        sshpass = False 
+        sshpass = False
 
     user = re.search(r"(?<=User=).*?(?=\ )", line).group(0)
 
@@ -131,7 +132,7 @@ def split_ssh_exec(line):
     try:
         cp_path = re.search(r"(?<=ConnectTimeout=).*?(?=\ )", line).group(0)
     except:
-        cp_path = None 
+        cp_path = None
 
     return {
         'hostname': hostname,
@@ -146,7 +147,15 @@ def split_ssh_exec(line):
 
 
 def main():
-    filenames = sys.argv[1:]
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dest', default='/tmp/task_durations.csv')
+    parser.add_argument('--task')
+    parser.add_argument('--host')
+    parser.add_argument('filename', nargs='+')
+    args = parser.parse_args()
+
+    filenames = args.filename[:]
 
     total_forks = None
     hostsmeta = {}
@@ -200,7 +209,7 @@ def main():
 
     # further eval each pid's data
     for pid,pid_data in pids.items():
-        isparent = False 
+        isparent = False
         timestamps = []
         hosts = []
         task_name = None
@@ -268,30 +277,49 @@ def main():
         byduration[-1][1]['duration']
     ))
 
-    # dump data to file for comparison
-    print('# task breakdowns')
-    rows = [['task', 'host', 'duration', 'lag', 'start', 'stop']]
-    for task,td in tasks.items():
-        _hosts = sorted(td.keys())
-        _hosts_total = len(_hosts)
-        #print('%s' % task)
+    # pick out the log entries for a specific task+host
+    if args.task and args.host:
+        task = tasks.get(args.task)
+        host = task.get(args.host)
+        _pid = host['start']['pid']
+        log = pids[_pid]['log']
+        for idx,x in enumerate(log):
+            log[idx] = x.replace(str(_pid) + ' ', '', 1)
 
-        # lag is the delta between a host starting vs task starting
-        starts = [td[x]['start']['ts'] for x in _hosts]
-        time0 = min(starts)
+        t0 = log[0].split(':', 1)[0]
+        t0 = float(t0)
+        for idx,x in enumerate(log):
+            ts = x.split(':', 1)[0]
+            delta = float(ts) - t0
+            log[idx] = x.replace(ts, str(delta))
 
-        for _host in _hosts:
-            #print('\t%s - %s' % (_host, td[_host]['duration']))
-            lag = td[_host]['start']['ts'] - time0
-            row = [task, _host, td[_host]['duration'], lag, td[_host]['start']['ts'], td[_host]['stop']['ts']]
-            rows.append(row)
-            #import epdb; epdb.st()
+        with open(args.dest, 'w') as f:
+            f.writelines(log)
 
-    with open('/tmp/task_durations.csv', 'w') as f:
-        cw = csv.writer(f)
-        for row in rows:
-            cw.writerow(row)
-    #import epdb; epdb.st()
+    else:
+        # dump data to file for comparison
+        #print('# task breakdowns')
+        rows = [['task', 'host', 'duration', 'lag', 'start', 'stop']]
+        for task,td in tasks.items():
+            _hosts = sorted(td.keys())
+            _hosts_total = len(_hosts)
+            #print('%s' % task)
+
+            # lag is the delta between a host starting vs task starting
+            starts = [td[x]['start']['ts'] for x in _hosts]
+            time0 = min(starts)
+
+            for _host in _hosts:
+                #print('\t%s - %s' % (_host, td[_host]['duration']))
+                lag = td[_host]['start']['ts'] - time0
+                row = [task, _host, td[_host]['duration'], lag, td[_host]['start']['ts'], td[_host]['stop']['ts']]
+                rows.append(row)
+                #import epdb; epdb.st()
+
+        with open(args.dest, 'w') as f:
+            cw = csv.writer(f)
+            for row in rows:
+                cw.writerow(row)
 
 
 if __name__ == "__main__":

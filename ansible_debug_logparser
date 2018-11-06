@@ -15,6 +15,7 @@
 #       ./ansible_debug_logparser ansible_syslog.log ansible_stdout.log
 #
 
+import csv
 import os
 import re
 import sys
@@ -266,6 +267,30 @@ def main():
         byduration[-1][1]['task_name'],
         byduration[-1][1]['duration']
     ))
+
+    # dump data to file for comparison
+    print('# task breakdowns')
+    rows = [['task', 'host', 'duration', 'lag', 'start', 'stop']]
+    for task,td in tasks.items():
+        _hosts = sorted(td.keys())
+        _hosts_total = len(_hosts)
+        #print('%s' % task)
+
+        # lag is the delta between a host starting vs task starting
+        starts = [td[x]['start']['ts'] for x in _hosts]
+        time0 = min(starts)
+
+        for _host in _hosts:
+            #print('\t%s - %s' % (_host, td[_host]['duration']))
+            lag = td[_host]['start']['ts'] - time0
+            row = [task, _host, td[_host]['duration'], lag, td[_host]['start']['ts'], td[_host]['stop']['ts']]
+            rows.append(row)
+            #import epdb; epdb.st()
+
+    with open('/tmp/task_durations.csv', 'w') as f:
+        cw = csv.writer(f)
+        for row in rows:
+            cw.writerow(row)
     #import epdb; epdb.st()
 
 

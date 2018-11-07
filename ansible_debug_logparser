@@ -16,6 +16,7 @@
 #
 
 import argparse
+import datetime
 import csv
 import os
 import re
@@ -152,6 +153,7 @@ def main():
     parser.add_argument('--dest', default='/tmp/task_durations.csv')
     parser.add_argument('--task')
     parser.add_argument('--host')
+    parser.add_argument('--timegaps', action='store_true', help="find gaps in time")
     parser.add_argument('filename', nargs='+')
     args = parser.parse_args()
 
@@ -186,6 +188,36 @@ def main():
                         data = split_executor_line(line)
                         tasks[data['task']][data['host']]['stop'] = data.copy()
 
+                    '''
+                    else:
+                        # 2018-10-17 13:01:49,366 p=36870 u=ansible | ...
+
+                        # trim leading chars up to the date
+                        #line = re.search('[0-9][0-9][0-9][0-9].*', line).group()
+                        line = re.search(r'[0-9]{4}-[0-9]+-[0-9]+ [0-9]+\:[0-9]+\:[0-9]+,[0-9]+ p=[0-9]+ .*', line).group()
+
+                        pid = re.search(r'p=[0-9]+', line).group()
+                        pid = pid.replace('p=', '')
+                        pid = int(pid)
+
+                        # time stamp
+                        ts = line.split('p=', 1)[0].strip()
+
+                        # datetime conversion
+                        ds = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S,%f')
+
+                        # epoch time
+                        es = (ds - datetime.datetime(1970,1,1)).total_seconds()
+
+                        if pid not in pids:
+                            pids[pid] = {'log': []}
+                            pids[pid]['log'].append(line.replace(ts, str(pid) + ' ' + str(es)+ ':').rstrip())
+
+                        #if pid != 36870:
+                        #    import epdb; epdb.st()
+                        #import epdb; epdb.st()
+                    '''
+
                 else:
                     # stdout+stderr logs
                     #print(line)
@@ -206,6 +238,12 @@ def main():
                         if pid not in pids:
                             pids[pid] = {'log': []}
                         pids[pid]['log'].append(line.lstrip())
+                    else:
+                        #  45575 1539795809.22047: done sending task result for
+                        #       task 005056a7-cdb4-2ab2-7a6e-00000000007b
+                        #print(line)
+                        #import epdb; epdb.st()
+                        pass
 
     # further eval each pid's data
     for pid,pid_data in pids.items():
@@ -277,8 +315,60 @@ def main():
         byduration[-1][1]['duration']
     ))
 
-    # pick out the log entries for a specific task+host
-    if args.task and args.host:
+    if args.timegaps:
+        # find gaps in time for tasks+hosts
+
+        # all time gaps
+        gaps = []
+
+        # iterate pids and calculate gaps between each host's log entries
+        for pid,pinfo in pids.items():
+            if pid == pids.keys()[0]:
+                continue
+
+            t0 = None
+            for idx,x in enumerate(pinfo['log']):
+                tn = re.search(r' [0-9]+\.[0-9]+\: ', x).group()
+                tn = tn.replace(':', '')
+                tn = float(tn.strip())
+                if t0 is None:
+                    t0 = tn
+                    continue
+
+                delta = tn - t0
+                t0 = tn
+                if delta > 0.0:
+                    gaps.append([delta, pid, idx])
+                #print(delta)
+
+        # sort the gaps and print info about the top X ...
+        gaps = sorted(gaps, key=lambda x: x[0])
+        for idg,gap in enumerate(gaps[-10:][::-1]):
+            pid = gap[1]
+            pinfo = pidsmeta[pid]
+            if pinfo['hosts']:
+                host = pinfo['hosts'][0]
+            else:
+                #import epdb; epdb.st()
+                host = None
+            task_name = pinfo['task_name']
+            print('# %s. %s second gap for host: %s in task: %s' % (idg, gap[0], host, task_name))
+
+            linenos = range(gap[2]-5, gap[2]+1)
+            for lineno in linenos:
+                if lineno < 0:
+                    continue
+                try:
+                    line = pids[pid]['log'][lineno]
+                except IndexError:
+                    continue
+                line = re.search(r' [0-9]+\.[0-9]+\: .*', line).group()
+                print('\t' + ' ' + str(lineno) + '.' + ' ' + line)
+            #import epdb; epdb.st()
+        #import epdb; epdb.st()
+
+    elif args.task and args.host:
+        # pick out the log entries for a specific task+host
         task = tasks.get(args.task)
         host = task.get(args.host)
         _pid = host['start']['pid']

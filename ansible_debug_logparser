@@ -153,7 +153,10 @@ def main():
     parser.add_argument('--dest', default='/tmp/task_durations.csv')
     parser.add_argument('--task')
     parser.add_argument('--host')
-    parser.add_argument('--timegaps', action='store_true', help="find gaps in time")
+    parser.add_argument('--timegaps', action='store_true',
+                        help="find gaps in time")
+    parser.add_argument('--host-durations', action='store_true',
+                        help="show total duration for each host")
     parser.add_argument('filename', nargs='+')
     args = parser.parse_args()
 
@@ -315,7 +318,16 @@ def main():
         byduration[-1][1]['duration']
     ))
 
-    if args.timegaps:
+    if args.host_durations:
+        hds = host_durations.items()
+        hds = [[x[1],x[0]] for x in hds]
+        hds = sorted(hds, key=lambda x: x[0], reverse=True)
+        print('# total duration for each host ...')
+        for hd in hds:
+            #print('%s - %ss' % (hd[1], hd[0]))
+            print("{0:20} - {1}".format(hd[1],hd[0]))
+
+    elif args.timegaps:
         # find gaps in time for tasks+hosts
 
         # all time gaps
@@ -325,6 +337,19 @@ def main():
         for pid,pinfo in pids.items():
             if pid == pids.keys()[0]:
                 continue
+
+            if args.task or args.host:
+                pmeta = pidsmeta[pid]
+                if args.task and pmeta['task_name'] is None:
+                    continue
+                if args.task is not None and args.task not in pmeta['task_name']:
+                    continue
+                if args.host and not pmeta['hosts']:
+                    continue
+                if args.host is not None and args.host not in pmeta['hosts']:
+                    continue
+
+                #import epdb; epdb.st()
 
             t0 = None
             for idx,x in enumerate(pinfo['log']):

@@ -21,6 +21,7 @@ import csv
 import os
 import re
 import sys
+import time
 
 from collections import OrderedDict
 from pprint import pprint
@@ -150,7 +151,7 @@ def split_ssh_exec(line):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dest', default='/tmp/task_durations.csv')
+    parser.add_argument('--dest', default=None)
     parser.add_argument('--task')
     parser.add_argument('--host')
     parser.add_argument('--timegaps', action='store_true',
@@ -190,36 +191,6 @@ def main():
                     elif ': done running TaskExecutor() for ' in line:
                         data = split_executor_line(line)
                         tasks[data['task']][data['host']]['stop'] = data.copy()
-
-                    '''
-                    else:
-                        # 2018-10-17 13:01:49,366 p=36870 u=ansible | ...
-
-                        # trim leading chars up to the date
-                        #line = re.search('[0-9][0-9][0-9][0-9].*', line).group()
-                        line = re.search(r'[0-9]{4}-[0-9]+-[0-9]+ [0-9]+\:[0-9]+\:[0-9]+,[0-9]+ p=[0-9]+ .*', line).group()
-
-                        pid = re.search(r'p=[0-9]+', line).group()
-                        pid = pid.replace('p=', '')
-                        pid = int(pid)
-
-                        # time stamp
-                        ts = line.split('p=', 1)[0].strip()
-
-                        # datetime conversion
-                        ds = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S,%f')
-
-                        # epoch time
-                        es = (ds - datetime.datetime(1970,1,1)).total_seconds()
-
-                        if pid not in pids:
-                            pids[pid] = {'log': []}
-                            pids[pid]['log'].append(line.replace(ts, str(pid) + ' ' + str(es)+ ':').rstrip())
-
-                        #if pid != 36870:
-                        #    import epdb; epdb.st()
-                        #import epdb; epdb.st()
-                    '''
 
                 else:
                     # stdout+stderr logs
@@ -406,10 +377,20 @@ def main():
         for idx,x in enumerate(log):
             ts = x.split(':', 1)[0]
             delta = float(ts) - t0
-            log[idx] = x.replace(ts, str(delta))
 
-        with open(args.dest, 'w') as f:
-            f.writelines(log)
+            #ets = time.gmtime(float(ts))
+            ets = datetime.datetime.fromtimestamp(float(ts))
+
+            insert = ' %s ' % ets.isoformat()
+            insert += ' %s ' % str(delta)
+            log[idx] = x.replace(':', insert, 1)
+
+        if args.dest:
+            with open(args.dest, 'w') as f:
+                f.writelines(log)
+        else:
+            for line in log:
+                print(line.rstrip())
 
     else:
         # dump data to file for comparison

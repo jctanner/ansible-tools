@@ -1,20 +1,18 @@
 #!/usr/bin/env python
 
 # run_echo.py
-#   A script to mock how ansible gets the remote user's home directory
+#   A script to measure remote command execution speed with ansible
 #
 # usage:
 #   python2 run_ssh_cmd.py
-# args:
-#   [--username=<username>] The remote user
-#   [--hostname=<hostname>] The remote host
-#   [--selectors] Turn selectors on
-#   [--controlpersist] Turn controlpersist on
-#   [--command] Remote command to run
 #
-# example:
-#   python2 run_echo.py --username=vagrant --hostname=vagrant --selectors
-#   --controlpersist
+# examples:
+#   python2 run_ssh_cmd.py \
+#    --debug \
+#    --username=vagrant \
+#    --hostname=vagrant \
+#    --iterations=100 \
+#    --command="umask 77 && mkdir -p ~/.ansible_test && rm -rf ~/.ansible_test"
 
 import fcntl
 import json
@@ -29,9 +27,7 @@ from optparse import OptionParser
 
 from ansible.compat import selectors
 from ansible.errors import AnsibleError
-from ansible.plugins.connection.ssh import Connection as SSHConnection
 from ansible.plugins.loader import connection_loader
-from ansible.plugins.loader import display
 
 
 HAS_LOGZERO = False
@@ -220,6 +216,9 @@ def remove_control_persist(SSHCMD):
 
 
 def extract_speeed_from_stdtout(so):
+
+    '''Strip transfer statistics from stderr/stdout'''
+
     # Transferred: sent 3192, received 2816 bytes, in 1.6 seconds
     # Bytes per second: sent 1960.0, received 1729.1
     data = {}
@@ -247,6 +246,8 @@ def extract_speeed_from_stdtout(so):
 
 def run_ssh_exec(command=None, hostname=None, username=None, keyfile=None):
 
+    '''Use ansible's connection plugin to execute the command'''
+
     with mock.patch('ansible.plugins.connection.ssh.display', MockLogger):
         pc = MockPlayContext()
         if hostname:
@@ -267,6 +268,8 @@ def run_ssh_exec(command=None, hostname=None, username=None, keyfile=None):
 
 
 def run_ssh_cmd(SSHCMD, command=None, hostname=None, username=None, use_selectors=False):
+
+    '''Run the command with subprocess and communicate or selectors'''
 
     if not use_selectors:
         p = subprocess.Popen(
@@ -425,28 +428,30 @@ def main():
     if not options.debug:
         logger.setLevel('INFO')
 
-    validate_control_socket(SSHCMD)
-    if not options.controlpersist:
-        SSHCMD = remove_control_persist(SSHCMD)
+    # munge the example ssh command if not using the connection plugin
+    if not options.use_plugin:
+        validate_control_socket(SSHCMD)
+        if not options.controlpersist:
+            SSHCMD = remove_control_persist(SSHCMD)
 
-    if options.hostname:
-        SSHCMD = set_hostname(SSHCMD, options.hostname)
+        if options.hostname:
+            SSHCMD = set_hostname(SSHCMD, options.hostname)
 
-    if options.username:
-        SSHCMD = set_username(SSHCMD, options.username)
+        if options.username:
+            SSHCMD = set_username(SSHCMD, options.username)
 
-    if options.keyfile:
-        SSHCMD = set_keyfile(SSHCMD, options.keyfile)
+        if options.keyfile:
+            SSHCMD = set_keyfile(SSHCMD, options.keyfile)
 
-    if options.vcount is not None:
-        SSHCMD = set_vcount(SSHCMD, count=options.vcount)
+        if options.vcount is not None:
+            SSHCMD = set_vcount(SSHCMD, count=options.vcount)
 
-    if options.command is not None:
-        #SSHCMD[-1] = "\"/bin/sh -c \'%s\'\"" % options.command
-        #SSHCMD[-1] = '\'/bin/sh -c \\\'%s\\\'\'' % options.command
-        SSHCMD[-1] = '/bin/sh -c "%s"' % options.command
+        if options.command is not None:
+            SSHCMD[-1] = '/bin/sh -c "%s"' % options.command
 
-    logger.info(SSHCMD)
+        logger.info(SSHCMD)
+
+    # run the command X times and record the durations + speeds
     durations = []
     for x in range(0, options.iterations):
         logger.info('iteration %s' % x)
@@ -456,6 +461,7 @@ def main():
                 command=options.command,
                 hostname=options.hostname,
                 username=options.username,
+                keyfile=options.keyfile,
             )
         else:
             (rc, so, se) = run_ssh_cmd(

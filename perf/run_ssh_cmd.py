@@ -9,6 +9,7 @@
 # examples:
 #   python2 run_ssh_cmd.py \
 #    --debug \
+#    --use_plugin \
 #    --username=vagrant \
 #    --hostname=vagrant \
 #    --iterations=100 \

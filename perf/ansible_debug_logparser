@@ -1,0 +1,1165 @@
+#!/usr/bin/env python
+
+# ansible_debug_logparser:
+#   A script to combine and enumerate ansible's debug stdout and syslog outputs.
+#
+# Purpose:
+#   Performance troubleshooting ansible can be difficult. If an issue can't
+#   be narrowed down to a single task and a single host, this script will
+#   aggregate all the debug data into human readable insights.
+#
+# Usage:
+#   1) Run ansible with debug logging and with the logfile set ...
+#       ANSIBLE_DEBUG=1 ANSIBLE_LOG_PATH=ansible_syslog.log ansible-playbook -vvvv ... | tee -a ansible_stdout.log
+#   2) Pass both log files to this script ...
+#       ./ansible_debug_logparser ansible_syslog.log ansible_stdout.log
+#
+
+import argparse
+import datetime
+import csv
+import glob
+import gzip
+import json
+import operator
+import os
+import pytz
+import re
+import subprocess
+import sys
+import time
+
+from collections import OrderedDict
+from pprint import pprint
+
+
+def read_syslogs(syslogs, timezone=None):
+    tz = pytz.timezone(timezone)
+    epoch = datetime.datetime.fromtimestamp(0, tz=pytz.timezone('GMT'))
+
+    syslog = []
+    for syslogfn in syslogs:
+        # Nov 27 10:33:12 <hostname> ...
+        year = '2018'
+        if '-' in syslogfn:
+            bn = os.path.basename(syslogfn)
+            bn = bn.split('-', 1)[-1]
+            bn = bn[:4]
+            try:
+                bn = int(bn)
+                year = str(bn)
+            except:
+                pass
+        if syslogfn.endswith('.gz'):
+            with gzip.open(syslogfn, 'r') as f:
+                lines = f.readlines()
+        else:
+            with open(syslogfn, 'r') as f:
+                lines = f.readlines()
+        for idx,x in enumerate(lines):
+            parts = x.split()
+            ds = year + ' ' + ' '.join(parts[0:3])
+            try:
+                ds = datetime.datetime.strptime(ds, '%Y %b %d %H:%M:%S')
+            except ValueError:
+                continue
+            dstz = tz.localize(ds)
+            #syslog.append([ds, os.path.basename(syslogfn) + ':' + str(idx), x.rstrip()])
+            syslog.append([dstz, os.path.basename(syslogfn) + ':' + str(idx), x.rstrip()])
+    return syslog
+
+
+def read_up2date_log(logfile, timezone=None):
+    tz = pytz.timezone(timezone)
+    epoch = datetime.datetime.fromtimestamp(0, tz=pytz.timezone('GMT'))
+
+    # [Mon Oct 29 08:34:56 2018] up2date
+    logs = []
+    if not os.path.exists(logfile):
+        return logs
+    with open(logfile, 'r') as f:
+        lines = f.readlines()
+    for idl,line in enumerate(lines):
+        parts = line.split(']', 1)
+        ds = parts[0].lstrip('[')
+        ds = datetime.datetime.strptime(ds, '%a %b %d %H:%M:%S %Y')
+        dstz = tz.localize(ds)
+        #logs.append([ds, os.path.basename(logfile) + ':' + str(idl), line.rstrip()])
+        logs.append([dstz, os.path.basename(logfile) + ':' + str(idl), line.rstrip()])
+    return logs
+
+
+def read_audit_logs(logfiles, timezone=None):
+    tz = pytz.timezone(timezone)
+    epoch = datetime.datetime.fromtimestamp(0, tz=pytz.timezone('GMT'))
+    # type=CRYPTO_KEY_USER msg=audit(1543378336.090:3600): pid=30297 uid=0
+    logs = []
+    for lf in logfiles:
+        with open(lf, 'r') as f:
+            lines = f.readlines()
+        for idl,line in enumerate(lines):
+            ts = re.search(r'msg=.*\(.*\)', line).group()
+            ts = re.search(r'\(.*\)', ts).group()
+            ts = ts.replace('(', '').replace(')', '')
+            ts = ts.split(':')[0]
+            ts = datetime.datetime.fromtimestamp(float(ts))
+            dstz = tz.localize(ts)
+            #logs.append([ts, os.path.basename(lf) + ':' + str(idl), line.rstrip()])
+            logs.append([dstz, os.path.basename(lf) + ':' + str(idl), line.rstrip()])
+
+    return logs
+
+def get_sos_logs(sosdir):
+
+    hnfile = os.path.join(sosdir, 'hostname')
+    with open(hnfile, 'r') as f:
+        hostname = f.read().strip()
+
+    datefile = os.path.join(sosdir, 'sos_commands', 'general', 'date')
+    with open(datefile, 'r') as f:
+        ds = f.read()
+    timezone = ds.split()[4]
+
+    auditlogs = glob.glob('%s/var/log/audit/*' % sosdir)
+    auditlogs = sorted(auditlogs)
+    auditlog = read_audit_logs(auditlogs, timezone=timezone)
+    auditlog = sorted(auditlog, key=lambda x: x[0])
+
+    journals = glob.glob('%s/sos_commands/logs/*' % sosdir)
+    journals = sorted(journals)
+    journal = read_syslogs(journals, timezone=timezone)
+    journal = sorted(journal, key=lambda x: x[0])
+
+    syslogs = glob.glob('%s/var/log/messages*' % sosdir)
+    syslogs = sorted(syslogs)
+    syslog = read_syslogs(syslogs, timezone=timezone)
+    syslog = sorted(syslog, key=lambda x: x[0])
+
+    securelogs = glob.glob('%s/var/log/secure*' % sosdir)
+    securelogs = sorted(securelogs)
+    securelog = read_syslogs(securelogs, timezone=timezone)
+    securelog = sorted(securelog, key=lambda x: x[0])
+
+    yumlogs = glob.glob('%s/var/log/yum*' % sosdir)
+    yumlogs = sorted(yumlogs)
+    yumlog = read_syslogs(yumlogs, timezone=timezone)
+    yumlog = sorted(yumlog, key=lambda x: x[0])
+
+    up2datelog = read_up2date_log('%s/var/log/up2date' % sosdir, timezone=timezone)
+
+    logs = auditlog + journal + syslog + securelog + yumlog + up2datelog
+    #logs = sorted(logs, key=lambda x: x[0])
+    logs = sorted(logs, key=operator.itemgetter(0))
+    return (hostname, logs)
+
+
+def split_executor_line(line):
+    '''Chop all of the info from a taskexecutor log entry'''
+
+    # 2018-10-12 01:29:39,173 p=5489 u=vagrant |    7705 1539307779.17295:
+    #   running TaskExecutor() for sshd_145/TASK: Check for /usr/local/sync (Target Directory)
+    # 2018-10-12 01:29:39,654 p=5489 u=vagrant |    7591 1539307779.65405:
+    #   done running TaskExecutor() for sshd_60/TASK: Check for /usr/local/sync (Target Directory) [525400a6-0421-65e9-9a84-000000000032]
+    # 5502 1539307714.25537: done running TaskExecutor() for sshd_250/TASK: wipe out the rules [525400a6-0421-65e9-9a84-00000000002e]
+
+    parts = line.split()
+    if parts[4] != '|' and not parts[0].isdigit():
+        orig_parts = parts[:]
+        teidx = parts.index('TaskExecutor()')
+        if 'done running TaskExecutor' in line:
+            parts = parts[teidx-4:]
+        else:
+            parts = parts[teidx-3:]
+        if not parts[0].isdigit():
+            badchars = [x for x in parts[0] if not x.isdigit()]
+            #safechars = parts[0].split(badchars[-1])[-1]
+            parts[0] = parts[0].split(badchars[-1])[-1]
+
+    if parts[4] == '|':
+        # pylogging
+        date = parts[0]
+        time = parts[1]
+        ppid = int(parts[2].replace('p=', ''))
+        uid = parts[3].replace('u=', '')
+        pid = int(parts[5])
+        ts = float(parts[6].replace(':', ''))
+    else:
+        # stdout+stderr
+        date = None
+        time = None
+        ppid = None
+        uid = None
+        try:
+            pid = int(parts[0])
+        except Exception as e:
+            print(e)
+            import epdb; epdb.st()
+        ts = float(parts[1].replace(':', ''))
+
+    uuid = None
+    if parts[-1].startswith('[') and parts[-1].endswith(']'):
+        uuid = parts[-1].replace('[', '').replace(']', '')
+
+    for_index = parts.index('for')
+    host = parts[for_index+1].split('/', 1)[0]
+
+    if uuid:
+        task = ' '.join(parts[for_index+2:-1])
+    else:
+        task = ' '.join(parts[for_index+2:])
+
+    return {
+        'date': date,
+        'time': time,
+        'ts': ts,
+        'ppid': ppid,
+        'pid': pid,
+        'uid': uid,
+        'uuid': uuid,
+        'host': host,
+        'task': task
+    }
+
+
+def split_ssh_exec(line):
+    '''Chop all of the info out of an ssh connection string'''
+
+    # <dockerhost> SSH: EXEC sshpass -d90 ssh -vvv -C -o ControlMaster=auto
+    #   -o ControlPersist=60s -o StrictHostKeyChecking=no -o Port=33017
+    #   -o User=root -o ConnectTimeout=10 -o ControlPath=/home/vagrant/.ansible/cp/da9b210846
+    #   dockerhost '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+
+    parts = line.split()
+    hostname = parts[0].replace('<', '').replace('>', '')
+    try:
+        port = re.search(r"(?<=Port=).*?(?=\ )", line).group(0)
+    except:
+        port = None
+
+    if 'stricthoskeychecking=no' in line.lower():
+        hostkey_checking = False
+    else:
+        hostkey_checking = True
+
+    if 'sshpass' in line:
+        sshpass = True
+    else:
+        sshpass = False
+
+    user = re.search(r"(?<=User=).*?(?=\ )", line).group(0)
+
+    if '-o ControlMaster=' in line:
+        cp = True
+    else:
+        cp = False
+    try:
+        timeout = re.search(r"(?<=ConnectTimeout=).*?(?=\ )", line).group(0)
+    except:
+        timeout = None
+    try:
+        cp_path = re.search(r"(?<=ConnectTimeout=).*?(?=\ )", line).group(0)
+    except:
+        cp_path = None
+
+    return {
+        'host': hostname,
+        'hostkey_checking': hostkey_checking,
+        'port': port,
+        'user': user,
+        'cp': cp,
+        'cp_path': cp_path,
+        'sshpass': sshpass,
+        'timeout': timeout,
+    }
+
+
+def get_pid_for_host(pids, hostname):
+    matching_pid = None
+    keys = pids.keys()
+    keys = keys[::-1]
+    for key in keys:
+        for ll in pids[key]['log'][::-1]:
+            if hostname in ll:
+                parts = ll.split()
+                ts = None
+                try:
+                    ts = float(parts[1].rstrip(':'))
+                except ValueError:
+                    #print(ll)
+                    #import epdb; epdb.st()
+                    continue
+
+                if matching_pid is None:
+                    matching_pid = [key, ts]
+                else:
+                    if ts > matching_pid[1]:
+                        matchind_pid = [key, ts]
+                break
+    if matching_pid:
+        return matching_pid[0]
+    else:
+        return None
+
+def pad_timestamp(ts_orig):
+    if isinstance(ts_orig, float):
+        ts_orig = str(ts_orig)
+    newts = ts_orig.split('.')[1]
+    newts += ''.join(['0' for x in range(0, (5 - len(newts)))])
+    newts = ts_orig.split('.')[0] + '.' + newts
+    return newts
+
+
+def clean_rows(rows):
+    pidmap = {}
+    hostmap = {}
+    for idx,x in enumerate(rows):
+        if x.get('hostname'):
+            x['line'] = x['line'].strip()
+            x['host'] = x['hostname']
+            if 'pid' in x:
+                pidmap[x['pid']] = x['host']
+                hostmap[x['host']] = x['pid']
+            if not x.get('pid') and 'host' in x:
+                x['pid'] = pidmap.get(x['host'])
+            x.pop('hostname', None)
+        rows[idx] = x
+    return rows
+
+
+def dict_rows_to_csv(rows, csvfile):
+    keys = set()
+    for row in rows:
+        for key in row.keys():
+            keys.add(key)
+    keys = sorted(keys)
+    keys.remove('line')
+    keys.append('line')
+
+    for k in ['host', 'task', 'play', 'pid', 'ts']:
+        keys.remove(k)
+        keys = [k] + keys
+
+    with open(csvfile, 'w') as f:
+        cw = csv.writer(f)
+        cw.writerow(keys)
+        for row in rows:
+            nrow = []
+            for k in keys:
+                if k == 'line':
+                    nrow.append(row.get(k, '').strip())
+                elif k == 'ts':
+                    nrow.append(pad_timestamp(row[k]))
+                else:
+                    nrow.append(row.get(k, ''))
+            cw.writerow(nrow)
+
+
+def merge_sos_logs(rows, soshosts):
+    epoch = datetime.datetime.fromtimestamp(0, tz=pytz.timezone('GMT'))
+
+    known_tasks = [x for x in rows if 'command.py' in x['line']]
+
+    for hn in soshosts.keys():
+
+        #import epdb; epdb.st()
+
+        _rows = []
+        for line in soshosts[hn]:
+            nts = (line[0] - epoch).total_seconds()
+            ntsf = float(nts)
+            #ntsf += 0.27
+            nts = pad_timestamp(ntsf)
+            row = {
+                'ts': ntsf,
+                'host': hn,
+                'logfile': line[1].split(':')[0],
+                'linenum': int(line[1].split(':')[1]),
+                'line': line[-1].strip()
+            }
+            _rows.append(row)
+
+        _rows = sorted(_rows, key=lambda x: x['ts'])
+        tasks = [x for x in _rows if 'Invoke' in x['line']]
+
+        kt = [x for x in known_tasks if x.get('host') == hn]
+        kt = [(x['ts'],x['line']) for x in kt]
+        kt = [(x[0],re.search(r'AnsiballZ_.*\.py', x[1]).group()) for x in kt]
+        kt = [(x[0],x[1].replace('AnsiballZ_', 'ansible-')) for x in kt]
+        kt = [(x[0],x[1].replace('.py', '')) for x in kt]
+
+        offset = None
+
+        li = None
+
+        if kt[-1][0] > tasks[-1]['ts']:
+            offset = kt[-1][0] - tasks[-1]['ts']
+            for idx,x in enumerate(_rows):
+                _rows[idx]['ts'] += offset
+        elif kt[-1][0] < tasks[-1]['ts']:
+            offset = tasks[-1]['ts'] - kt[-1][0]
+            for idx,x in enumerate(_rows):
+                _rows[idx]['ts'] -= offset
+
+        #import epdb; epdb.st()
+        rows = rows + _rows
+
+    rows = sorted(rows, key=lambda x: x['ts'])
+
+    return rows
+
+
+def process_data_with_args(args, pids, host_durations):
+    if args.host_durations:
+        hds = host_durations.items()
+        hds = [[x[1],x[0]] for x in hds]
+        hds = sorted(hds, key=lambda x: x[0], reverse=True)
+        print('# total duration for each host ...')
+        for hd in hds:
+            #print('%s - %ss' % (hd[1], hd[0]))
+            print("{0:20} - {1}".format(hd[1],hd[0]))
+
+    elif args.timegaps:
+        # find gaps in time for tasks+hosts
+
+        # all time gaps
+        gaps = []
+
+        # iterate pids and calculate gaps between each host's log entries
+        for pid,pinfo in pids.items():
+            if pid == pids.keys()[0]:
+                continue
+
+            if args.task or args.host:
+                pmeta = pidsmeta[pid]
+                if args.task and pmeta['task_name'] is None:
+                    continue
+                if args.task is not None and args.task not in pmeta['task_name']:
+                    continue
+                if args.host and not pmeta['hosts']:
+                    continue
+                if args.host is not None and args.host not in pmeta['hosts']:
+                    continue
+
+                #import epdb; epdb.st()
+
+            t0 = None
+            for idx,x in enumerate(pinfo['log']):
+                tn = re.search(r' [0-9]+\.[0-9]+\: ', x).group()
+                tn = tn.replace(':', '')
+                tn = float(tn.strip())
+                if t0 is None:
+                    t0 = tn
+                    continue
+
+                delta = tn - t0
+                t0 = tn
+                if delta > 0.0:
+                    gaps.append([delta, pid, idx])
+                #print(delta)
+
+        # sort the gaps and print info about the top X ...
+        gaps = sorted(gaps, key=lambda x: x[0])
+        for idg,gap in enumerate(gaps[-10:][::-1]):
+            pid = gap[1]
+            pinfo = pidsmeta[pid]
+            if pinfo['hosts']:
+                host = pinfo['hosts'][0]
+            else:
+                #import epdb; epdb.st()
+                host = None
+            task_name = pinfo['task_name']
+            print('# %s. %s second gap for host: %s in task: %s' % (idg, gap[0], host, task_name))
+
+            linenos = range(gap[2]-5, gap[2]+1)
+            for lineno in linenos:
+                if lineno < 0:
+                    continue
+                try:
+                    line = pids[pid]['log'][lineno]
+                except IndexError:
+                    continue
+                line = re.search(r' [0-9]+\.[0-9]+\: .*', line).group()
+                print('\t' + ' ' + str(lineno) + '.' + ' ' + line)
+            #import epdb; epdb.st()
+        #import epdb; epdb.st()
+
+    elif args.task and args.host:
+        # pick out the log entries for a specific task+host
+        task = tasks.get(args.task)
+        host = task.get(args.host)
+        _pid = host['start']['pid']
+        log = pids[_pid]['log']
+        for idx,x in enumerate(log):
+            log[idx] = x.replace(str(_pid) + ' ', '', 1)
+
+        t0 = log[0].split(':', 1)[0]
+        t0 = float(t0)
+        tn = t0
+        for idx,x in enumerate(log):
+            ts = x.split(':', 1)[0]
+            tn = float(ts)
+            delta = float(ts) - t0
+
+            # reformat log if no sosreports given
+            if not args.sosdir:
+                #ets = time.gmtime(float(ts))
+                ets = datetime.datetime.fromtimestamp(float(ts))
+                insert = ' %s ' % ets.isoformat()
+                insert += ' %s ' % str(delta)
+                log[idx] = x.replace(':', insert, 1)
+
+        if args.sosdir and args.host in soshosts:
+            epoch = datetime.datetime.fromtimestamp(0, tz=pytz.timezone('GMT'))
+
+            combined = []
+
+            for idx,x in enumerate(log):
+                ts = x.split(':', 1)[0]
+                tsf = float(ts)
+                ets = datetime.datetime.fromtimestamp(tsf)
+                x = x.replace(ts + ':', '', 1)
+                combined.append([tsf, ets.isoformat(), x])
+
+            for line in soshosts[args.host]:
+                nts = (line[0] - epoch).total_seconds()
+                ntsf = float(nts)
+                ntsf += 0.27
+                nts = pad_timestamp(ntsf)
+                if ntsf >= t0:
+                    if ntsf <= tn:
+                        combined.append([ntsf, line[0].isoformat(), ' '.join(line[1:])])
+                        #import epdb; epdb.st()
+
+            combined = sorted(combined, key=lambda x: x[0])
+            log = combined[:]
+            #import epdb; epdb.st()
+
+
+        if args.dest is not None:
+            with open(args.dest, 'w') as f:
+                f.writelines(log)
+        else:
+            import epdb; epdb.st()
+            for line in log:
+                '''
+                ts_orig = line.split()[0]
+                if len(ts_orig.split('.')[1]) == 5:
+                    print(line.rstrip())
+                else:
+                    #newts = ts_orig.split('.')[1]
+                    #newts += ''.join(['0' for x in range(0, (5 - len(newts)))])
+                    #newts = ts_orig.split('.')[0] + '.' + newts
+                    newts = pad_timestamp(ts_orig)
+                    newline = line.replace(ts_orig, newts, 1)
+                    #import epdb; epdb.st()
+                    print(newline.rstrip())
+                '''
+                print('{0:<20} {1:<30} {2}'.format(line[0], line[1], line[2].rstrip()))
+
+    else:
+        # dump data to file for comparison
+        #print('# task breakdowns')
+        rows = [['task', 'host', 'duration', 'lag', 'start', 'stop']]
+        for task,td in tasks.items():
+            _hosts = sorted(td.keys())
+            _hosts_total = len(_hosts)
+            #print('%s' % task)
+
+            # lag is the delta between a host starting vs task starting
+            starts = [td[x]['start']['ts'] for x in _hosts]
+            time0 = min(starts)
+
+            for _host in _hosts:
+                #print('\t%s - %s' % (_host, td[_host]['duration']))
+                lag = td[_host]['start']['ts'] - time0
+                row = [task, _host, td[_host]['duration'], lag, td[_host]['start']['ts'], td[_host]['stop']['ts']]
+                rows.append(row)
+                #import epdb; epdb.st()
+
+        if args.dest is not None:
+            with open(args.dest, 'w') as f:
+                cw = csv.writer(f)
+                for row in rows:
+                    cw.writerow(row)
+        else:
+            for row in rows:
+                print(row)
+
+
+def create_relative_timestamps(rows):
+    t0 = None
+    for idx,x in enumerate(rows):
+        if t0 is None:
+            rows[idx]['rts'] = 0.0
+            t0 = x['ts']
+        else:
+            rows[idx]['rts'] = x['ts'] - t0
+    return rows
+
+
+def parse_logs_with_48378_schema(args):
+
+    rows = []
+    pids = {}
+    tasks = {}
+
+    filenames = args.filename[:]
+    filenames = [args.filename[0]]
+
+    # iterate files and lines to classify and string chop them
+    for fn in filenames:
+        print('# reading %s' % fn)
+        with open(fn, 'r') as f:
+
+            current_playbook = None
+            current_play_name = None
+            current_task_name = None
+            current_task_uuid = None
+            current_module = None
+            last_timestamp = None
+
+            logfn = os.path.basename(fn)
+            lineno = 0
+
+            for line in f.readlines():
+                lineno += 1
+                if not line.strip():
+                    continue
+
+                if re.search(r'\s+\d+ \d+\.\d+ \[.*\]:', line):
+                    # https://github.com/ansible/ansible/pull/48378
+                    data = re.search(r'\s+\d+ \d+\.\d+ \[.*\]:', line).group()
+                    data = data.strip()
+                    data = data.split()
+
+                    row = {}
+                    row['pid'] = int(data[0])
+                    row['ts'] =  float(data[1])
+                    row['host'] = data[2].replace('[', '').replace(']', '').replace(':', '')
+                    if row['host'] == 'None':
+                        row['host'] = None
+                    row['playbook'] = current_playbook
+                    row['play'] = current_play_name
+                    row['task'] = current_task_name
+                    row['task_uuid'] = current_task_uuid
+                    row['module'] = current_module
+                    row['line'] = line.rstrip()
+                    row['file'] = logfn
+                    row['linenum'] = lineno
+
+                    if 'PLAYBOOK:' in line:
+                        playbook = re.search(r'PLAYBOOK: .* \*', line).group()
+                        playbook = playbook.replace('PLAYBOOK:', '')
+                        playbook = playbook.replace('*', '')
+                        playbook = playbook.strip()
+                        current_playbook = playbook
+                        row['playbook'] = playbook
+
+                        current_play_name = None
+                        current_task_name = None
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'PLAY' in line:
+                        try:
+                            play = re.search(r'PLAY \[.*\]', line).group()
+                            play = play.replace('PLAY', '')
+                            play = play.replace('[', '')
+                            play = play.replace(']', '')
+                            play = play.strip()
+                            current_play_name = play
+                            row['play'] = play
+                        except AttributeError as e:
+                            pass
+
+                        current_task_name = None
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'TASK:' in line:
+                        try:
+                            task = re.search(r'TASK: .*', line).group()
+                            task = task.replace('TASK:', '')
+                            task = task.strip()
+                            current_task_name = task
+                            row['task'] = task
+                        except AttributeError as e:
+                            pass
+
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'in run() - task' in line:
+                        # 5128 1543680532.73490 [None]: in run() - task
+                        # f45c89b5-63bd-c3ea-c4db-000000000011
+                        try:
+                            tuuid = re.search('in run\(\) - task .*$', line.rstrip()).group()
+                            tuuid = tuuid.split()[-1]
+                            current_task_uuid = tuuid
+                            row['task_uuid'] = tuuid
+                        except AttributeError as e:
+                            pass
+                    elif 'Using module file' in line:
+                        try:
+                            module = re.search(r'Using module file .*', line).group()
+                            module = module.replace('Using module file', '')
+                            module = module.strip()
+                            current_module = module
+                            row['module'] = module
+                        except AttributeError as e:
+                            pass
+
+                    rows.append(row)
+
+    print('# assembling logs by pid')
+    for row in rows:
+        if row['pid'] not in pids:
+            pids[row['pid']] = {'log': []}
+        pids[row['pid']]['log'].append(row['line'])
+
+    print('# assembling tasks from rows')
+    for row in rows:
+        if row['task'] is None:
+            continue
+        if row['host'] is None:
+            continue
+        if row['task'] not in tasks:
+            tasks[row['task']] = {}
+        if row['host'] not in tasks[row['task']]:
+            tasks[row['task']][row['host']] = {
+                'log': []
+            }
+        tasks[row['task']][row['host']]['log'].append(row)
+
+    print('# assembling start+stop from tasks')
+    for task,hosts in tasks.items():
+        for host,hdata in hosts.items():
+            # "tasks" need to contain start+stop timestamps
+            start = hdata['log'][0]['ts']
+            stop = hdata['log'][-1]['ts']
+            tasks[task][host]['start'] = {'ts': start}
+            tasks[task][host]['stop'] = {'ts': stop}
+
+    return (rows, pids, tasks)
+
+
+def parse_logs(args):
+
+    hostsmeta = {}
+    tasks = OrderedDict()
+    pids = OrderedDict()
+    pidsmeta = {}
+
+    rows = []
+
+    # iterate files and lines to classify and string chop them
+    filenames = args.filename[:]
+    for fn in filenames:
+        print('# reading %s' % fn)
+        with open(fn, 'r') as f:
+
+            current_playbook = None
+            current_play_name = None
+            current_task_name = None
+            current_task_uuid = None
+            current_module = None
+            last_timestamp = None
+
+            logfn = os.path.basename(fn)
+            lineno = 0
+
+            for line in f.readlines():
+                lineno += 1
+                if not line.strip():
+                    continue
+
+                if re.search(r'^  \d+ \d+\.\d+ \[.*\]:', line):
+                    # https://github.com/ansible/ansible/pull/48378
+                    data = re.search(r'^  \d+ \d+\.\d+ \[.*\]:', line).group()
+                    data = data.strip()
+                    data = data.split()
+
+                    row = {}
+                    row['pid'] = int(data[0])
+                    row['ts'] =  float(data[1])
+                    row['host'] = data[2].replace('[', '').replace(']', '').replace(':', '')
+                    if row['host'] == 'None':
+                        row['host'] = None
+                    row['playbook'] = current_playbook
+                    row['play'] = current_play_name
+                    row['task'] = current_task_name
+                    row['task_uuid'] = current_task_uuid
+                    row['module'] = current_module
+                    row['line'] = line.rstrip()
+                    row['file'] = logfn
+                    row['linenum'] = lineno
+
+                    if 'PLAYBOOK:' in line:
+                        playbook = re.search(r'PLAYBOOK: .* \*', line).group()
+                        playbook = playbook.replace('PLAYBOOK:', '')
+                        playbook = playbook.replace('*', '')
+                        playbook = playbook.strip()
+                        current_playbook = playbook
+                        row['playbook'] = playbook
+
+                        current_play_name = None
+                        current_task_name = None
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'PLAY' in line:
+                        try:
+                            play = re.search(r'PLAY \[.*\]', line).group()
+                            play = play.replace('PLAY', '')
+                            play = play.replace('[', '')
+                            play = play.replace(']', '')
+                            play = play.strip()
+                            current_play_name = play
+                            row['play'] = play
+                        except AttributeError as e:
+                            pass
+
+                        current_task_name = None
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'TASK:' in line:
+                        try:
+                            task = re.search(r'TASK: .*', line).group()
+                            task = task.replace('TASK:', '')
+                            task = task.strip()
+                            current_task_name = task
+                            row['task'] = task
+                        except AttributeError as e:
+                            pass
+
+                        current_task_uuid = None
+                        current_module = None
+
+                    elif 'in run() - task' in line:
+                        # 5128 1543680532.73490 [None]: in run() - task
+                        # f45c89b5-63bd-c3ea-c4db-000000000011
+                        try:
+                            tuuid = re.search('in run\(\) - task .*$', line.rstrip()).group()
+                            tuuid = tuuid.split()[-1]
+                            current_task_uuid = tuuid
+                            row['task_uuid'] = tuuid
+                        except AttributeError as e:
+                            pass
+                    elif 'Using module file' in line:
+                        try:
+                            module = re.search(r'Using module file .*', line).group()
+                            module = module.replace('Using module file', '')
+                            module = module.strip()
+                            current_module = module
+                            row['module'] = module
+                        except AttributeError as e:
+                            pass
+
+                    rows.append(row)
+
+                elif 'p=' in line and 'u=' in line:
+                    # pylogging entries
+                    if ': running TaskExecutor() for ' in line:
+                        data = split_executor_line(line)
+                        data['play'] = current_play_name
+
+                        if data['host'] not in hostsmeta:
+                            hostsmeta[data['host']] = {}
+                        if data['task'] not in tasks:
+                            tasks[data['task']] = OrderedDict()
+                        tasks[data['task']][data['host']] = {
+                            'start': data.copy()
+                        }
+                        row = data.copy()
+                        row['file'] = logfn
+                        row['linenum'] = lineno
+                        row['play'] = current_play_name
+                        row['line'] = line
+                        rows.append(row)
+                    elif ': done running TaskExecutor() for ' in line:
+                        data = split_executor_line(line)
+                        tasks[data['task']][data['host']]['stop'] = data.copy()
+                        row = data.copy()
+                        row['play'] = current_play_name
+                        row['line'] = line
+                        row['file'] = logfn
+                        row['linenum'] = lineno
+                        rows.append(row)
+
+                else:
+
+                    if line.startswith('PLAYBOOK '):
+                        pass
+
+                    elif line.startswith('PLAY '):
+                        try:
+                            current_play_name = re.search(r'\[.*\]', line).group()
+                        except AttributeError:
+                            pass
+
+                    elif line.startswith('TASK'):
+                        current_task_name = re.search(r"(?<=TASK \[).*?(?=\])", line).group(0)
+                    elif 'SSH: EXEC' in line:
+                        # <HOSTNAME> SSH: EXEC ssh -vvv -C -o ...
+                        data = split_ssh_exec(line)
+                        thispid =  get_pid_for_host(pids, data['host'])
+                        if thispid is None:
+                            continue
+                        newline = '%s %s: %s' % (thispid, last_timestamp, line)
+                        pids[thispid]['log'].append(newline.rstrip())
+
+                        row = data.copy()
+                        row['play'] = current_play_name
+                        row['task'] = current_task_name
+                        row['line'] = line
+                        row['ts'] = last_timestamp
+                        row['file'] = logfn
+                        row['linenum'] = lineno
+                        rows.append(row)
+
+                    elif re.search(r"<.*>\ \(", line):
+                        hostname = re.search(r"<.*>\ \(", line).group()
+                        hostname = hostname.split('>')[0]
+                        hostname = hostname.replace('<', '')
+                        thispid = get_pid_for_host(pids, hostname)
+                        if thispid is None:
+                            continue
+                        newline = '%s %s: %s' % (thispid, last_timestamp, line)
+                        pids[thispid]['log'].append(newline.rstrip())
+
+                        row = {}
+                        row['hostname'] = hostname
+                        row['play'] = current_play_name
+                        row['task'] = current_task_name
+                        row['ts'] = last_timestamp
+                        row['pid'] = thispid
+                        row['line'] = line
+                        row['file'] = logfn
+                        row['linenum'] = lineno
+                        rows.append(row)
+
+                    elif re.search(r"\ [0-9]+\.[0-9]+\:", line):
+                        #   9820 1542665612.30418: Adding handler ...
+                        numbers = re.findall(r"[0-9]+", line)
+
+                        if 'worker is' in line and 'out of' in line:
+                            total_forks = int(numbers[-1])
+
+                        #ts = float(numbers[1] + '.' + numbers[2])
+                        pid = int(numbers[0])
+                        if pid not in pids:
+                            pids[pid] = {'log': []}
+                        pids[pid]['log'].append(line.lstrip())
+                        ts = '.'.join(numbers[1:3])
+                        ts = float(ts)
+                        last_timestamp = ts
+
+                        row = {}
+                        row['pid'] = pid
+                        row['line'] = line
+                        row['ts'] = ts
+                        row['file'] = logfn
+                        row['linenum'] = lineno
+                        rows.append(row)
+
+                    else:
+                        #  45575 1539795809.22047: done sending task result for
+                        #       task 005056a7-cdb4-2ab2-7a6e-00000000007b
+                        #print(line)
+                        pass
+
+    return (rows, pids, tasks)
+
+
+def get_pids_meta(pids):
+
+    pidsmeta = {}
+
+    print('# examining pids')
+    for pid,pid_data in pids.items():
+        isparent = False
+        timestamps = []
+        hosts = []
+        task_name = None
+        task_uuid = None
+
+        for line in pid_data['log']:
+            line = line.rstrip()
+
+            numbers = re.findall(r"[0-9]+", line)
+            ts = float(numbers[1] + '.' + numbers[2])
+            timestamps.append(ts)
+
+            if 'starting run' in line:
+                isparent = True
+            if 'running TaskExecutor()' in line:
+                data = split_executor_line(line)
+                if data['host'] not in hosts:
+                    hosts.append(data['host'])
+                task_name = data['task']
+                if data['uuid']:
+                    task_uuid = data['uuid']
+
+        duration = timestamps[-1] - timestamps[0]
+
+        if pid not in pidsmeta:
+            pidsmeta[pid] = {}
+        pidsmeta[pid]['pid'] = pid
+        pidsmeta[pid]['task_name'] = task_name
+        pidsmeta[pid]['task_uuid'] = task_uuid
+        pidsmeta[pid]['isparent'] = isparent
+        pidsmeta[pid]['start'] = timestamps[0]
+        pidsmeta[pid]['stop'] = timestamps[-1]
+        pidsmeta[pid]['duration'] = duration
+        pidsmeta[pid]['hosts'] = hosts[:]
+
+    return pidsmeta
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dest', default=None)
+    parser.add_argument('--task')
+    parser.add_argument('--host')
+    parser.add_argument('--use_48378_schema', action='store_true')
+    parser.add_argument('--timegaps', action='store_true',
+                        help="find gaps in time")
+    parser.add_argument('--host-durations', action='store_true',
+                        help="show total duration for each host")
+    parser.add_argument('--before', type=int, default=5)
+    parser.add_argument('--after', type=int, default=5)
+    parser.add_argument('--sosdir', action='append',
+                        help='path to an extracted sosreport')
+    parser.add_argument('filename', nargs='+')
+    args = parser.parse_args()
+
+    filenames = args.filename[:]
+
+    # parse sosreports if requested
+    soshosts = {}
+    if args.sosdir:
+        for sosdir in args.sosdir:
+            print('# loading %s' % sosdir)
+            (hn, soslogs) = get_sos_logs(sosdir)
+            soshosts[hn] = soslogs
+
+    total_forks = None
+    hostsmeta = {}
+
+    if args.use_48378_schema:
+        (rows, pids, tasks) = parse_logs_with_48378_schema(args)
+    else:
+        (rows, pids, tasks) = parse_logs(args)
+    pidsmeta = get_pids_meta(pids)
+
+    # find the duration for each task for each host
+    print('# calculating durations')
+    host_durations = {}
+    for task,hosts in tasks.items():
+        for host,results in hosts.items():
+            duration = results['stop']['ts'] - results['start']['ts']
+            tasks[task][host]['duration'] = duration
+            if host not in host_durations:
+                host_durations[host] = 0.0
+            host_durations[host] += duration
+
+    # find the slowest host among the group
+    print('# finding slowest host')
+    sorted_durations = sorted(host_durations.items(), key=lambda x: x[1])
+    durations = [x[1] for x in sorted_durations]
+    if durations:
+        avg = sum(durations) / float(len(durations))
+    else:
+        avg = 0.0
+
+    print('# total forks: %s' % total_forks)
+    print('# average total duration for each host: %ss' % avg)
+
+    sh = sorted_durations[-1][0]
+    print('# slowest host')
+    print(' name: %s' % sh)
+    print(' total duration: %ss' % sorted_durations[-1][1])
+    _pids = [x for x in pidsmeta.items() if sh in x[1]['hosts']]
+    bychrono = sorted(_pids, key=lambda x: x[1]['start'])
+    byduration = sorted(_pids, key=lambda x: x[1]['duration'])
+    print(' slowest task: [p=%s] %s (t=%ss)' % (
+        byduration[-1][1]['pid'],
+        byduration[-1][1]['task_name'],
+        byduration[-1][1]['duration']
+    ))
+
+    ######################################################
+    #   MERGE SOS DATA
+    ######################################################
+    if args.sosdir:
+        print('# merging sos logs')
+        rows = merge_sos_logs(rows, soshosts)
+
+    ######################################################
+    #   CLEAN THE DATA
+    ######################################################
+    print('# cleaning data')
+    rows = clean_rows(rows)
+
+    ######################################################
+    #   FILTER THE DATA
+    ######################################################
+    if args.task:
+        print('# filtering by task')
+        rows = [x for x in rows if x.get('task') == args.task]
+    if args.host:
+        print('# filtering by host')
+        rows = [x for x in rows if x.get('host') == args.host]
+
+    ######################################################
+    #   RELATIVE TIMESTAMPS
+    ######################################################
+    rows = create_relative_timestamps(rows)
+
+    ######################################################
+    #   FIND TIMEGAPS
+    ######################################################
+    if args.timegaps:
+        for idx,x in enumerate(rows):
+            rows[idx]['index'] = idx
+            if idx == 0:
+                rows[idx]['gap'] = 0.0
+                continue
+            gap = x['ts'] - rows[idx-1]['ts']
+            rows[idx]['gap'] = gap
+
+
+        gaps = [{'gap': x['gap'], 'ts': x['ts'], 'index': x['index']} for x in rows]
+        gaps = sorted(gaps, key=lambda x: x['gap'])
+
+        tg = gaps[-1]
+        start = tg['index'] - args.before
+        stop = tg['index'] + args.after
+        tg_rows = rows[start:stop]
+        rows = tg_rows[:]
+        #import epdb; epdb.st()
+        #sys.exit(0)
+
+    ######################################################
+    #   EMIT RESULTS
+    ######################################################
+
+    if args.dest and args.dest.endswith('.csv'):
+        dict_rows_to_csv(rows, args.dest)
+    elif args.dest and args.dest.endswith('.json'):
+        with open(args.dest, 'w') as f:
+            f.write(json.dumps(rows))
+
+    print('{0:<20} {1:<20} {2}'.format('relative-timestap', 'timestamp', 'entry'))
+    for row in rows:
+        print('{0:<20} {1:<20} {2}'.format(
+            row['rts'],
+            row['ts'],
+            row['line'].rstrip()
+        ))
+
+
+if __name__ == "__main__":
+    main()

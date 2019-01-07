@@ -1,0 +1,12 @@
+- set_fact:
+    tower_packages:
+        - sysstat
+        - net-tools
+        - python-pip
+        - vim-enhanced
+    demo_project: DEMO_PROJECT
+
+- name: install default packages
+  package:
+    name: "{{ tower_packages }}"
+    state: present

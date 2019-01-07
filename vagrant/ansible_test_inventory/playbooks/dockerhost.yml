@@ -26,6 +26,7 @@
     - name: copy the container spawn script
       copy:
         src: spawncontainers.sh
-        dest: /tmp/spawncontainers.sh
+        dest: /root/spawncontainers.sh
         mode: 0777
+      become: True
 

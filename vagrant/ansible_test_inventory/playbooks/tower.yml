@@ -3,3 +3,4 @@
   gather_facts: False
   roles:
     - common
+    - tower_master

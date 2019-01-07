@@ -1,0 +1,19 @@
+- set_fact:
+    licensefile: ~/Documents/redhat.ansible/jctanner-tower-license.txt
+
+- copy:
+    src: "{{ licensefile }}"
+    dest: /var/lib/awx/tower_license.json
+  become: True
+
+- name: install the license
+  shell: >
+    curl -k \
+        -L \
+        -v \
+        -H "Content-Type: application/json" \
+        -X POST -u admin:"{{ tower_api_pass }}" \
+        --data @/var/lib/awx/tower_license.json \
+        https://localhost/api/v1/config/
+  become: True
+

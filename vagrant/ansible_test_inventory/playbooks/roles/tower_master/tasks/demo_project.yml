@@ -1,0 +1,14 @@
+- name: create the demo project directory
+  file:
+    path: /var/lib/awx/projects/{{ demo_project }}
+    state: directory
+    owner: awx
+    group: awx
+  become: True
+
+- name: create the demo project
+  tower_project:
+    name: "{{ demo_project }}"
+    state: present
+    local_path: "{{ '/var/lib/awx/projects/' +  demo_project }}"
+  ignore_errors: True

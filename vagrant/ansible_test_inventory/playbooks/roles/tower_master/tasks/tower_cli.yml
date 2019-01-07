@@ -1,0 +1,13 @@
+- shell: cat /etc/profile.d/ansible-tower.sh | fgrep "Password" | awk '{print $4}'
+  register: res
+
+- set_fact:
+    tower_api_pass: "{{ res.stdout }}"
+
+- name: install towercli
+  pip:
+    name: ansible-tower-cli
+    state: latest
+
+- name: set the towercli creds
+  shell: tower-cli login admin --password={{ tower_api_pass }}

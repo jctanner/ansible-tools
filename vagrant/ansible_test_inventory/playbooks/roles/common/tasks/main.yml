@@ -44,6 +44,6 @@
 - name: turn on sysstat
   service:
     name: sysstat
-    state: running
+    state: started
     enabled: True
   become: True

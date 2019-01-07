@@ -22,7 +22,7 @@
     - name: install docker
       shell: which docker || sudo dnf -y install docker
     - name: start docker
-      shell: sudo docker ps || sudo sytemctl restart docker
+      shell: sudo docker ps || sudo systemctl restart docker
     - name: copy the container spawn script
       copy:
         src: spawncontainers.sh

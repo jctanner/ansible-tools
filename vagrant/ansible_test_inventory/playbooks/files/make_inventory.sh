@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cgcreate -a awx:awx -t awx:awx -g memory:ansible_profile
+
 # the script is an unusable standalone entity
 tower-cli inventory_script create \
     -v \

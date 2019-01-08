@@ -1,0 +1,67 @@
+an-ios-01#show cdp neighbors detail 
+-------------------------
+Device ID: an-iosl2-02.ansible.eng.rdu2.redhat.com
+Entry address(es): 
+  IP address: 10.8.38.76
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+Holdtime : 132 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.76
+
+-------------------------
+Device ID: an-iosl2-01.ansible.eng.rdu2.redhat.com
+Entry address(es): 
+  IP address: 10.8.38.75
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+Holdtime : 137 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.75
+
+-------------------------
+Device ID: an-iosl2-01.ansible.eng.rdu2.redhat.com
+Entry address(es): 
+  IP address: 10.8.38.75
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/2
+Holdtime : 148 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Native VLAN: 1
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.75
+
+-------------------------
+Device ID: switch02.ansible.eng.rdu2.redhat.com(TB000B0000B)
+Entry address(es): 
+  IP address: 10.8.38.74
+Platform: N7K-C7018,  Capabilities: Router Switch CVTA phone port 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): mgmt0
+Holdtime : 168 sec
+ --More-- 

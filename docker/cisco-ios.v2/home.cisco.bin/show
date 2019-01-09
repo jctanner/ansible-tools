@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+
+import sys
+
+CDP_NEIGHBORS_DETAIL = """
+-------------------------
+Device ID: an-iosl2-02.foobar.com
+Entry address(es): 
+  IP address: 10.8.38.76
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+Holdtime : 132 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.76
+
+-------------------------
+Device ID: an-iosl2-01.foobar.com
+Entry address(es): 
+  IP address: 10.8.38.75
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): GigabitEthernet0/0
+Holdtime : 137 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.75
+
+-------------------------
+Device ID: an-iosl2-01.foobar.com
+Entry address(es): 
+  IP address: 10.8.38.75
+Platform: Cisco ,  Capabilities: Router Switch IGMP 
+Interface: GigabitEthernet0/1,  Port ID (outgoing port): GigabitEthernet0/2
+Holdtime : 148 sec
+
+Version :
+Cisco IOS Software, vios_l2 Software (vios_l2-ADVENTERPRISEK9-M), Experimental Version 15.2(20170321:233949) [mmen 101]
+Copyright (c) 1986-2017 by Cisco Systems, Inc.
+Compiled Wed 22-Mar-17 08:38 by mmen
+
+advertisement version: 2
+VTP Management Domain: ''
+Native VLAN: 1
+Duplex: full
+Management address(es): 
+  IP address: 10.8.38.75
+
+-------------------------
+Device ID: switch02.foobar.com(TB000B0000B)
+Entry address(es): 
+  IP address: 10.8.38.74
+Platform: N7K-C7018,  Capabilities: Router Switch CVTA phone port 
+Interface: GigabitEthernet0/0,  Port ID (outgoing port): mgmt0
+Holdtime : 168 sec
+ --More-- 
+"""
+
+def main():
+    if sys.argv[1] == "version":
+        print('Version 999')
+        print('Cisco 3745 (R7000) processor (revision 2.0) with 245760K/16384K bytes of memory.')
+    elif sys.argv[1] == "running-config":
+        #print('Building configuration...')
+        #print('')
+        #print('Current configuration : 184 bytes')
+        #print('!')
+        print('interface GigabitEthernet0/0')
+        print(' description Gigabit0')
+        print(' no ip address')
+        print(' load-interval 30')
+        print(' duplex full')
+        print(' speed 100')
+        print(' pppoe enable group global')
+        print(' pppoe-client dial-pool-number 10')
+        print('end')
+    elif ' '.join(sys.argv[1:4]) == "ip interface brief":
+	print('Interface     IP-Address     OK?  Method  Status                  Protocol')
+	print('Ethernet0     10.108.00.5    YES  NVRAM   up                      up      ')
+	print('Ethernet1     unassigned     YES  unset   administratively down   down    ')
+	print('Loopback0     10.108.200.5   YES  NVRAM   up                      up      ')
+	print('Serial0       10.108.100.5   YES  NVRAM   up                      up      ')
+	print('Serial1       10.108.40.5    YES  NVRAM   up                      up      ')
+	print('Serial2       10.108.100.5   YES  manual  up                      up      ')
+	print('Serial3       unassigned     YES  unset   administratively down   down    ')
+    elif ' '.join(sys.argv[1:4]) == "cdp neighbors detail":
+        print(CDP_NEIGHBORS_DETAIL.lstrip())
+
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()

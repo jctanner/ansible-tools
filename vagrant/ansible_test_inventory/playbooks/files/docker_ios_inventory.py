@@ -55,7 +55,14 @@ def get_containers_for_host(hostname):
             'ansible_host': hostname,
             'ansible_user': CONTAINER_USERNAME,
             'ansible_ssh_pass': CONTAINER_PASSWORD,
-            'ansible_python_interpreter': '/usr/bin/python3'
+            #'ansible_python_interpreter': '/usr/bin/python3',
+            'device_os': 'cisco-ios',
+            'cli': {
+                'username': CONTAINER_USERNAME,
+                'host': hostname,
+                'port': int(parts[-2].split(':')[-1].split('-')[0]),
+                'password': CONTAINER_PASSWORD
+            }
         }
 
     return containers

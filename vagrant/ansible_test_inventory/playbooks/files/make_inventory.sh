@@ -6,6 +6,7 @@ cgcreate -a awx:awx -t awx:awx -g memory:ansible_profile
 tower-cli inventory_script create \
     -v \
     --insecure \
+    --organization=Default \
     --script=@docker_inventory.py \
     --name=docker_inventory_script
 

@@ -10,3 +10,6 @@ enable -n enable
 
 # match the typical prompt on IOS
 PS1="\h> "
+
+# make sure the ~/bin is in the PATH
+PATH=~/bin:$PATH

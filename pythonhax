@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# pythonhax - a shim to do magical things
+#   * find the python path automatically
+#   * strace the python execution
+#
+# 1. copy this script to /usr/bin/pythonhax on the remote host
+# 2. chmod +x /usr/bin/pythonhax on the remote host
+# 2. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
+#
+
+LOGFILE=/tmp/pyhax.log
+STRACE=1
+STRACE_DIR=/tmp/strace.out
+
+function FIND_PYTHON () {
+    FOUND_PYTHON=$(which python 2>/dev/null)
+    PYTHON_BASENAMES="python:python2:python3:platform-python"
+    CHECKPATH=$PATH:/usr/libexec
+
+    if [ -z "$FOUND_PYTHON" ]; then
+        IFS=:
+        for BN in $PYTHON_BASENAMES; do
+            for CPATH in $CHECKPATH; do
+                echo "$(date) check $CPATH/$BN" >> $LOGFILE
+                test -x $CPATH/$BN
+                RC=$?
+                if [[ $RC == 0 ]]; then
+                    FOUND_PYTHON=$CPATH/$BN
+                    echo "$(date) found $CPATH/$BN" >> $LOGFILE
+                    break
+                fi
+            done
+            if [ ! -z "$FOUND_PYTHON" ];  then
+                break
+            fi
+        done
+    fi
+    echo $FOUND_PYTHON
+}
+
+PYTHON=$(FIND_PYTHON)
+echo "$(date) $PYTHON" >> $LOGFILE
+if [ -z "$PYTHON" ]; then
+    echo "no python found in path"
+    exit 1
+fi
+
+echo "$(date) STRACE:$STRACE" >> $LOGFILE
+if [[ "$STRACE" == "1" ]]; then
+    THIS_STRACE_DIR=$STRACE_DIR/$$
+    mkdir -p $THIS_STRACE_DIR
+    echo "$(date) $$ $THIS_STRACE_DIR" >> $LOGFILE
+    echo "$(date) $PYTHON $@" >> $LOGFILE
+    strace -ffttv -s 100000 -o $THIS_STRACE_DIR/pid $PYTHON $@
+else
+    echo "$(date) $PYTHON $@" >> $LOGFILE
+    $PYTHON $@
+fi

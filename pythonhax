@@ -15,6 +15,7 @@
 #   3. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
 #
 
+PYTHON_BASENAMES="python:python2:python3:platform-python"
 LOGFILE=/tmp/pyhax.log
 PTRACE=1
 PTRACE_DIR=/tmp/ptrace.out
@@ -29,7 +30,6 @@ STRACE_DIR=/tmp/strace.out
 
 function FIND_PYTHON () {
     FOUND_PYTHON=$(which python 2>/dev/null)
-    PYTHON_BASENAMES="python:python2:python3:platform-python"
     CHECKPATH=$PATH:/usr/libexec
 
     if [ -z "$FOUND_PYTHON" ]; then
@@ -55,9 +55,6 @@ function FIND_PYTHON () {
 
 PYTHON=$(FIND_PYTHON)
 echo "$(date) using $PYTHON" >> $LOGFILE
-ARGN="${@: -1}"
-
-
 if [ -z "$PYTHON" ]; then
     echo "no python found in path"
     exit 1

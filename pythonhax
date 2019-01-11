@@ -13,7 +13,16 @@
 #   1. copy this script to /usr/bin/pythonhax on the remote host
 #   2. chmod +x /usr/bin/pythonhax on the remote host
 #   3. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
+#   4. set PTRACE or STRACE to 1 so that either will trigger
 #
+# NOTES
+#   * it can be placed in ~/bin/pythonhax on the remote but
+#     this may cause issues with sudo+su access
+#   * python or python2 will be preferred for now
+#   * strace has to be installed for the stracing to work
+#   * the strace and trace files can be tailed on the remote
+#     if the module is long-running
+
 
 PYTHON_BASENAMES="python:python2:python3:platform-python"
 LOGFILE=/tmp/pyhax.log

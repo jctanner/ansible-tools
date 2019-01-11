@@ -3,14 +3,17 @@
 # pythonhax - a shim to do magical things
 #   * find the python path automatically
 #   * strace the python execution
+#   * explode & python -m trace --trace the module
 #
 # 1. copy this script to /usr/bin/pythonhax on the remote host
 # 2. chmod +x /usr/bin/pythonhax on the remote host
-# 2. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
+# 3. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
 #
 
 LOGFILE=/tmp/pyhax.log
-STRACE=1
+PTRACE=1
+PTRACE_DIR=/tmp/ptrace.out
+STRACE=0
 STRACE_DIR=/tmp/strace.out
 
 function FIND_PYTHON () {
@@ -40,19 +43,46 @@ function FIND_PYTHON () {
 }
 
 PYTHON=$(FIND_PYTHON)
-echo "$(date) $PYTHON" >> $LOGFILE
+echo "$(date) using $PYTHON" >> $LOGFILE
+ARGN="${@: -1}"
+
+
 if [ -z "$PYTHON" ]; then
     echo "no python found in path"
     exit 1
 fi
 
-echo "$(date) STRACE:$STRACE" >> $LOGFILE
 if [[ "$STRACE" == "1" ]]; then
+    echo "$(date) STRACE:$STRACE" >> $LOGFILE
     THIS_STRACE_DIR=$STRACE_DIR/$$
     mkdir -p $THIS_STRACE_DIR
     echo "$(date) $$ $THIS_STRACE_DIR" >> $LOGFILE
     echo "$(date) $PYTHON $@" >> $LOGFILE
     strace -ffttv -s 100000 -o $THIS_STRACE_DIR/pid $PYTHON $@
+
+elif [[ "$PTRACE" == "1" ]] && [ ${ARGN: -3} == ".py" ]; then
+    ZIPFILE="${@: -1}"
+    ZIPDIR="$(dirname $ZIPFILE)"
+
+    echo "$(date) sed -i.bak \"s|/usr/bin/pythonhax|$PYTHON|g\" $ZIPFILE" >> $LOGFILE
+    sed -i.bak "s|/usr/bin/pythonhax|$PYTHON|g" $ZIPFILE
+
+    echo "$(date) $PYTHON $ZIPFILE explode" >> $LOGFILE
+    $PYTHON $ZIPFILE explode 2>&1 >> $LOGFILE
+    
+    #echo "$(date) $PYTHON $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute" >> $LOGFILE
+    #$PYTHON $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute
+
+    RESFILE=$PTRACE_DIR/$$.out
+    RESDIR=$(dirname $RESFILE)
+    if [ ! -d $RESDIR ]; then
+        mkdir -p $RESDIR
+    fi
+
+    echo "$(date) $PYTHON -m trace --trace $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute > $RESFILE" >> $LOGFILE
+    $PYTHON -m trace --trace $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute > $RESFILE
+    egrep -m1 ^\{ $RESFILE
+
 else
     echo "$(date) $PYTHON $@" >> $LOGFILE
     $PYTHON $@

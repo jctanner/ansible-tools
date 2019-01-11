@@ -2,12 +2,17 @@
 
 # pythonhax - a shim to do magical things
 #   * find the python path automatically
+#       - for those hairy distros with no /usr/bin/python
+#       - for those extra-hairy distros with no /usr/bin/python(2|3) either
 #   * strace the python execution
+#       - when you need to figure out what the module is doing at the system level
 #   * explode & python -m trace --trace the module
+#       - when you need to figure out how the module is working
 #
-# 1. copy this script to /usr/bin/pythonhax on the remote host
-# 2. chmod +x /usr/bin/pythonhax on the remote host
-# 3. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
+# INSTALL
+#   1. copy this script to /usr/bin/pythonhax on the remote host
+#   2. chmod +x /usr/bin/pythonhax on the remote host
+#   3. set ansible_python_interpreter=/usr/bin/pythonhax in inventory
 #
 
 LOGFILE=/tmp/pyhax.log

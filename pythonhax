@@ -16,6 +16,12 @@ PTRACE_DIR=/tmp/ptrace.out
 STRACE=0
 STRACE_DIR=/tmp/strace.out
 
+
+
+######################################
+#   AUTO-INTERPRETER
+######################################
+
 function FIND_PYTHON () {
     FOUND_PYTHON=$(which python 2>/dev/null)
     PYTHON_BASENAMES="python:python2:python3:platform-python"
@@ -52,7 +58,32 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
+
+######################################
+#   FIX ZIPFILE INTERPRETER
+######################################
+
+ARGN="${@: -1}"
+if [ ${ARGN: -3} == ".py" ]; then
+    ZIPFILE="${@: -1}"
+    ZIPDIR="$(dirname $ZIPFILE)"
+
+    # The zipfile injects the pythonhax interpreter we need to fix
+    echo "$(date) sed -i.bak \"s|/usr/bin/pythonhax|$PYTHON|g\" $ZIPFILE" >> $LOGFILE
+    sed -i.bak "s|/usr/bin/pythonhax|$PYTHON|g" $ZIPFILE
+fi
+
+
+######################################
+#   EXECUTE
+######################################
+
 if [[ "$STRACE" == "1" ]]; then
+
+    #
+    # strace the whole thing
+    #
+
     echo "$(date) STRACE:$STRACE" >> $LOGFILE
     THIS_STRACE_DIR=$STRACE_DIR/$$
     mkdir -p $THIS_STRACE_DIR
@@ -61,29 +92,38 @@ if [[ "$STRACE" == "1" ]]; then
     strace -ffttv -s 100000 -o $THIS_STRACE_DIR/pid $PYTHON $@
 
 elif [[ "$PTRACE" == "1" ]] && [ ${ARGN: -3} == ".py" ]; then
+
+    #
+    # python -m trace --trace
+    #
+
     ZIPFILE="${@: -1}"
     ZIPDIR="$(dirname $ZIPFILE)"
 
-    echo "$(date) sed -i.bak \"s|/usr/bin/pythonhax|$PYTHON|g\" $ZIPFILE" >> $LOGFILE
-    sed -i.bak "s|/usr/bin/pythonhax|$PYTHON|g" $ZIPFILE
-
+    # Explode it so that we're not stuck in subprocess hell
     echo "$(date) $PYTHON $ZIPFILE explode" >> $LOGFILE
     $PYTHON $ZIPFILE explode 2>&1 >> $LOGFILE
-    
-    #echo "$(date) $PYTHON $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute" >> $LOGFILE
-    #$PYTHON $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute
 
+    # Define a temporary holding file for output
     RESFILE=$PTRACE_DIR/$$.out
     RESDIR=$(dirname $RESFILE)
     if [ ! -d $RESDIR ]; then
         mkdir -p $RESDIR
     fi
 
+    # Pass in the args file as the first argument and then execute to invoke
     echo "$(date) $PYTHON -m trace --trace $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute > $RESFILE" >> $LOGFILE
     $PYTHON -m trace --trace $ZIPDIR/debug_dir/*.py $ZIPDIR/debug_dir/args execute > $RESFILE
+
+    # Assume the first dict/json style line is the module output
     egrep -m1 ^\{ $RESFILE
 
 else
+
+    #
+    # vanilla execution with the located interpreter
+    #
+
     echo "$(date) $PYTHON $@" >> $LOGFILE
     $PYTHON $@
 fi

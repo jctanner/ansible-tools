@@ -90,14 +90,14 @@ def main():
         print(' pppoe-client dial-pool-number 10')
         print('end')
     elif ' '.join(sys.argv[1:4]) == "ip interface brief":
-	print('Interface     IP-Address     OK?  Method  Status                  Protocol')
-	print('Ethernet0     10.108.00.5    YES  NVRAM   up                      up      ')
-	print('Ethernet1     unassigned     YES  unset   administratively down   down    ')
-	print('Loopback0     10.108.200.5   YES  NVRAM   up                      up      ')
-	print('Serial0       10.108.100.5   YES  NVRAM   up                      up      ')
-	print('Serial1       10.108.40.5    YES  NVRAM   up                      up      ')
-	print('Serial2       10.108.100.5   YES  manual  up                      up      ')
-	print('Serial3       unassigned     YES  unset   administratively down   down    ')
+        print('Interface     IP-Address     OK?  Method  Status                  Protocol')
+        print('Ethernet0     10.108.00.5    YES  NVRAM   up                      up      ')
+        print('Ethernet1     unassigned     YES  unset   administratively down   down    ')
+        print('Loopback0     10.108.200.5   YES  NVRAM   up                      up      ')
+        print('Serial0       10.108.100.5   YES  NVRAM   up                      up      ')
+        print('Serial1       10.108.40.5    YES  NVRAM   up                      up      ')
+        print('Serial2       10.108.100.5   YES  manual  up                      up      ')
+        print('Serial3       unassigned     YES  unset   administratively down   down    ')
     elif ' '.join(sys.argv[1:4]) == "cdp neighbors detail":
         print(CDP_NEIGHBORS_DETAIL.lstrip())
 

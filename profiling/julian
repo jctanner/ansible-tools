@@ -1,10 +1,11 @@
 #!/bin/bash
 
 #
-# delphiki - execute a specific version of ansible wrapped in debug and strace
+# julian - execute a specific version of ansible wrapped in debug and strace
+# delphiki - parses and analyzes the output of julian
 #
 # how to use this script:
-#   ANSIBLE_VERSION=<VERSION> <SCRIPTNAME> <ANSIBLE_PLAYBOOK_ARGS>
+#   ANSIBLE_VERSION=<VERSION> ./julian <ANSIBLE_PLAYBOOK_ARGS>
 # example:
 #   ANSIBLE_VERSION=ansible-2.7.5 ./vrun.sh -i inventory -c local site.yml
 #

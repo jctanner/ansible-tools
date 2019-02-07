@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-# ansible_debug_logparser:
-#   A script to combine and enumerate ansible's debug stdout and syslog outputs.
+#
+# delphiki:
+#   A script to combine and enumerate the outputs of julian
 #
 # Purpose:
 #   Performance troubleshooting ansible can be difficult. If an issue can't
@@ -9,10 +10,10 @@
 #   aggregate all the debug data into human readable insights.
 #
 # Usage:
-#   1) Run ansible with debug logging and with the logfile set ...
-#       ANSIBLE_DEBUG=1 ANSIBLE_LOG_PATH=ansible_syslog.log ansible-playbook -vvvv ... | tee -a ansible_stdout.log
-#   2) Pass both log files to this script ...
-#       ./ansible_debug_logparser ansible_syslog.log ansible_stdout.log
+#   1) Run ansible with julian
+#       ANSIBLE_VERSION=ansible-2.7.5 ./julian -i inventory -c local site.yml
+#   2) Pass the jobresults directory to this script
+#       ./delphiki jobresults.2.7.5
 #
 
 import argparse

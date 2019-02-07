@@ -1,0 +1,520 @@
+#!/usr/bin/env python
+
+# ansible_debug_logparser:
+#   A script to combine and enumerate ansible's debug stdout and syslog outputs.
+#
+# Purpose:
+#   Performance troubleshooting ansible can be difficult. If an issue can't
+#   be narrowed down to a single task and a single host, this script will
+#   aggregate all the debug data into human readable insights.
+#
+# Usage:
+#   1) Run ansible with debug logging and with the logfile set ...
+#       ANSIBLE_DEBUG=1 ANSIBLE_LOG_PATH=ansible_syslog.log ansible-playbook -vvvv ... | tee -a ansible_stdout.log
+#   2) Pass both log files to this script ...
+#       ./ansible_debug_logparser ansible_syslog.log ansible_stdout.log
+#
+
+import argparse
+import ast
+import csv
+import os
+import re
+import sys
+
+from collections import OrderedDict
+from pprint import pprint
+
+from logzero import logger
+
+
+def split_executor_line(line):
+    '''Chop all of the info from a taskexecutor log entry'''
+
+    # 2018-10-12 01:29:39,173 p=5489 u=vagrant |    7705 1539307779.17295:
+    #   running TaskExecutor() for sshd_145/TASK: Check for /usr/local/sync (Target Directory)
+    # 2018-10-12 01:29:39,654 p=5489 u=vagrant |    7591 1539307779.65405:
+    #   done running TaskExecutor() for sshd_60/TASK: Check for /usr/local/sync (Target Directory) [525400a6-0421-65e9-9a84-000000000032]
+    # 5502 1539307714.25537: done running TaskExecutor() for sshd_250/TASK: wipe out the rules [525400a6-0421-65e9-9a84-00000000002e]
+
+    parts = line.split()
+    if parts[4] != '|' and not parts[0].isdigit():
+        orig_parts = parts[:]
+        teidx = parts.index('TaskExecutor()')
+        if 'done running TaskExecutor' in line:
+            parts = parts[teidx-4:]
+        else:
+            parts = parts[teidx-3:]
+        if not parts[0].isdigit():
+            badchars = [x for x in parts[0] if not x.isdigit()]
+            #safechars = parts[0].split(badchars[-1])[-1]
+            parts[0] = parts[0].split(badchars[-1])[-1]
+            #import epdb; epdb.st()
+
+    if parts[4] == '|':
+        # pylogging
+        date = parts[0]
+        time = parts[1]
+        ppid = int(parts[2].replace('p=', ''))
+        uid = parts[3].replace('u=', '')
+        pid = int(parts[5])
+        ts = float(parts[6].replace(':', ''))
+    else:
+        # stdout+stderr
+        date = None
+        time = None
+        ppid = None
+        uid = None
+        try:
+            pid = int(parts[0])
+        except Exception as e:
+            print(e)
+            import epdb; epdb.st()
+        ts = float(parts[1].replace(':', ''))
+
+    uuid = None
+    if parts[-1].startswith('[') and parts[-1].endswith(']'):
+        uuid = parts[-1].replace('[', '').replace(']', '')
+
+    for_index = parts.index('for')
+    host = parts[for_index+1].split('/', 1)[0]
+
+    if uuid:
+        task = ' '.join(parts[for_index+2:-1])
+    else:
+        task = ' '.join(parts[for_index+2:])
+
+    return {
+        'date': date,
+        'time': time,
+        'ts': ts,
+        'ppid': ppid,
+        'pid': pid,
+        'uid': uid,
+        'uuid': uuid,
+        'host': host,
+        'task': task
+    }
+
+
+def split_ssh_exec(line):
+    '''Chop all of the info out of an ssh connection string'''
+
+    # <dockerhost> SSH: EXEC sshpass -d90 ssh -vvv -C -o ControlMaster=auto 
+    #   -o ControlPersist=60s -o StrictHostKeyChecking=no -o Port=33017
+    #   -o User=root -o ConnectTimeout=10 -o ControlPath=/home/vagrant/.ansible/cp/da9b210846
+    #   dockerhost '/bin/sh -c '"'"'echo ~root && sleep 0'"'"''
+
+    parts = line.split()
+    hostname = parts[0].replace('<', '').replace('>', '')
+    try:
+        port = re.search(r"(?<=Port=).*?(?=\ )", line).group(0)
+    except:
+        port = None
+
+    if 'stricthoskeychecking=no' in line.lower():
+        hostkey_checking = False
+    else:
+        hostkey_checking = True
+
+    if 'sshpass' in line:
+        sshpass = True
+    else:
+        sshpass = False 
+
+    try:
+        user = re.search(r"(?<=User=).*?(?=\ )", line).group(0)
+    except Exception as e:
+        user = None
+
+    if '-o ControlMaster=' in line:
+        cp = True
+    else:
+        cp = False
+    try:
+        timeout = re.search(r"(?<=ConnectTimeout=).*?(?=\ )", line).group(0)
+    except:
+        timeout = None
+    try:
+        cp_path = re.search(r"(?<=ConnectTimeout=).*?(?=\ )", line).group(0)
+    except:
+        cp_path = None 
+
+    return {
+        'hostname': hostname,
+        'hostkey_checking': hostkey_checking,
+        'port': port,
+        'user': user,
+        'cp': cp,
+        'cp_path': cp_path,
+        'sshpass': sshpass,
+        'timeout': timeout,
+    }
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dest', help="DEPRECATED")
+    parser.add_argument('--durations-dest', default='/tmp/durations.csv', help="csv file to store the results")
+    parser.add_argument('--log-dest', default='/tmp/combined.log', help="log file to store the combined logs")
+    parser.add_argument('--host')
+    parser.add_argument('--task')
+    parser.add_argument('--pid')
+    parser.add_argument('filename', nargs='+')
+
+    args = parser.parse_args()
+    #import epdb; epdb.st()
+    
+    filenames = sys.argv[1:]
+
+    total_forks = None
+    hostsmeta = {}
+    tasks = OrderedDict()
+    pids = OrderedDict()
+    strace_pids = OrderedDict()
+    pidsmeta = {}
+
+    # iterate files and lines to classify and string chop them
+    for fn in args.filename:
+        logger.debug('read %s' % fn)
+        with open(fn, 'r') as f:
+            current_task_name = None
+            lineno = -1
+            for line in f.readlines():
+                lineno += 1
+
+                if not line.strip():
+                    continue
+
+                _line = line[:]
+
+                while '\n' in line or '\r' in line:
+                    line = line.replace('\n', ' ')
+                    line = line.replace('\r', ' ')
+
+
+                if 'strace' in fn:
+                    # /tmp/jobresults/strace.out/pid.19373
+                    # 1549308914.909791 execve(
+
+                    #if 'clone(' in line:
+                    #    import epdb; epdb.st()
+
+                    pidnum = int(fn.split('.')[-1])
+                    ts = re.search(r'\d+\.\d+', line).group()
+                    try:
+                        syscall = re.search(r'\ \w+\(', line).group().replace('(', '').strip()
+                    except Exception as e:
+                        # when the master kills children, SIGCHLD is used ...
+                        # 1549310198.245188 --- SIGCHLD {si_signo=SIGCHLD ...
+                        #print(e)
+                        #import epdb; epdb.st()
+                        continue
+
+                    duration = line.strip().split()[-1].replace('<', '').replace('>', '')
+
+                    try:
+                        cmd = re.search(r'\[.*\],', line).group().replace(',', '')
+                        cmd = ast.literal_eval(cmd)
+                    except Exception as e:
+                        # '1549315066.929309 brk(NULL)             = 0x1b3f000 <0.000006>\n'
+                        #import epdb; epdb.st()
+                        cmd = []
+
+                    if pidnum not in strace_pids:
+                        strace_pids[pidnum] = {
+                            'args': None,
+                            'log': [],
+                            'parent': None,
+                            'children': [],
+                            'clones': [],
+                        }
+
+                    if syscall == 'clone':
+                        try:
+                            clone = re.search(r'\ \= \d+', line).group()
+                        except AttributeError:
+                            #import epdb; epdb.st()
+                            continue
+                        clone = clone.replace('=', '').strip()
+                        clone = int(clone)
+                        if clone not in strace_pids[pidnum]['clones']:
+                            strace_pids[pidnum]['clones'].append(clone)
+                        #import epdb; epdb.st()
+
+                    strace_pids[pidnum]['log'].append({
+                        'pidnum': pidnum,
+                        'ts': ts,
+                        'duration': duration,
+                        'syscall': syscall,
+                        'args': cmd,
+                        'filename': fn,
+                        'lineno': lineno,
+                        'raw': line.rstrip(),
+                        #'raw': '',
+                    })
+
+                    #if ' done with _execute_module (command' in line:
+                    #    import epdb; epdb.st()
+
+                elif 'p=' in line and 'u=' in line:
+                    # pylogging entries
+                    if ': running TaskExecutor() for ' in line:
+                        data = split_executor_line(line)
+                        if data['host'] not in hostsmeta:
+                            hostsmeta[data['host']] = {}
+                        if data['task'] not in tasks:
+                            tasks[data['task']] = OrderedDict()
+                        tasks[data['task']][data['host']] = {
+                            'start': data.copy()
+                        }
+
+                    elif ': done running TaskExecutor() for ' in line:
+                        data = split_executor_line(line)
+                        try:
+                            tasks[data['task']][data['host']]['stop'] = data.copy()
+                        except KeyError as e:
+                            print(e)
+                            import epdb; epdb.st()
+
+                else:
+                    # stdout+stderr logs
+                    #print(line)
+
+                    if line.startswith('TASK'):
+                        current_task_name = re.search(r"(?<=TASK \[).*?(?=\])", line).group(0)
+                        #import epdb; epdb.st()
+                    elif 'SSH: EXEC' in line:
+                        data = split_ssh_exec(line)
+                    elif re.search(r"\ [0-9]+\.[0-9]+\:", line):
+                        numbers = re.findall(r"[0-9]+", line)
+
+                        if 'worker is' in line and 'out of' in line:
+                            total_forks = int(numbers[-1])
+
+                        #ts = float(numbers[1] + '.' + numbers[2])
+                        pid = int(numbers[0])
+                        if pid not in pids:
+                            pids[pid] = {'log': []}
+                        pids[pid]['log'].append(line.lstrip())
+
+    # find the parent and children strace pids
+    logger.debug('map ppid and pids')
+    for k,v in strace_pids.items():
+        if v.get('clones'):
+            for clone in v['clones']:
+                strace_pids[clone]['parent'] = int(k)
+            #import epdb; epdb.st()
+    #import epdb; epdb.st()
+
+    # merge strace data into the pids
+    logger.debug('merge strace logs to pid logs')
+    for spid,sdata in strace_pids.items():
+
+        # map out the pid tree
+        pidchain = [spid]
+        thispid = spid
+        while True:
+            if not strace_pids[thispid]['parent']:
+                break
+            pidchain.append(strace_pids[thispid]['parent'])
+            thispid = pidchain[-1]
+
+        pidchain = pidchain[::-1]
+        #import epdb; epdb.st()
+
+        if spid in pids:
+            # 20112 1549310205.95534: running handlers\n
+            plog = pids[spid]['log'][:]
+            for slog in sdata['log']:
+                sline = '%s %s: (pidchain=%s) <STRACE> %s' % (
+                    slog['pidnum'],
+                    slog['ts'],
+                        '|'.join([str(x) for x in pidchain]),
+                    slog['raw'].replace('\n', ' '),
+                )
+                plog.append(sline)
+            plog = sorted(plog)
+            pids[spid]['log'] = plog[:]
+
+        else:
+            # find the parent ansible pid
+            '''
+            pidchain = [spid]
+            thispid = spid
+            while True:
+                if not strace_pids[thispid]['parent']:
+                    break
+                pidchain.append(strace_pids[thispid]['parent'])
+                thispid = pidchain[-1]
+                if thispid in pids:
+                    break
+            '''
+
+            thispid = None
+            for x in reversed(pidchain):
+                if x in pids:
+                    thispid = x
+                    break
+
+            if thispid in pids:
+                plog = pids[thispid]['log'][:]
+                for slog in sdata['log']:
+                    sline = '%s %s: (pidchain=%s) <STRACE> %s' % (
+                        slog['pidnum'],
+                        slog['ts'],
+                        '|'.join([str(x) for x in pidchain]),
+                        slog['raw'].replace('\n', ' '),
+                    )
+                    plog.append(sline)
+                plog = sorted(plog)
+                pids[thispid]['log'] = plog[:]
+                #import epdb; epdb.st()
+
+    # make a combined log for easy grepping
+    clog = []
+    for k,v in pids.items():
+        for line in v['log']:
+            ts = line.split()[1].replace(':', '')
+            clog.append('%s %s' % (ts, line.rstrip()))
+    clog = sorted(clog)
+    with open(args.log_dest, 'w') as f:
+        f.write('\n'.join(clog))
+    #import epdb; epdb.st()
+
+    # further eval each pid's data
+    logger.debug('create pidsmeta')
+    for pid,pid_data in pids.items():
+        isparent = False 
+        timestamps = []
+        hosts = []
+        task_name = None
+        task_uuid = None
+
+        for line in pid_data['log']:
+            line = line.rstrip()
+
+            numbers = re.findall(r"[0-9]+", line)
+            ts = float(numbers[1] + '.' + numbers[2])
+            timestamps.append(ts)
+
+            parts = line.split()
+            if 'starting run' in line:
+                isparent = True
+            if 'running TaskExecutor()' in line:
+                data = split_executor_line(line)
+                if data['host'] not in hosts:
+                    hosts.append(data['host'])
+                task_name = data['task']
+                if data['uuid']:
+                    task_uuid = data['uuid']
+
+        duration = timestamps[-1] - timestamps[0]
+
+        if pid not in pidsmeta:
+            pidsmeta[pid] = {}
+        pidsmeta[pid]['pid'] = pid
+        pidsmeta[pid]['task_name'] = task_name
+        pidsmeta[pid]['task_uuid'] = task_uuid
+        pidsmeta[pid]['isparent'] = isparent
+        pidsmeta[pid]['start'] = timestamps[0]
+        pidsmeta[pid]['stop'] = timestamps[-1]
+        pidsmeta[pid]['duration'] = duration
+        pidsmeta[pid]['hosts'] = hosts[:]
+
+    # find the duration for each task for each host
+    logger.debug('compute per host duration')
+    host_durations = {}
+    for task,hosts in tasks.items():
+        for host,results in hosts.items():
+            duration = results['stop']['ts'] - results['start']['ts']
+            tasks[task][host]['duration'] = duration
+            if host not in host_durations:
+                host_durations[host] = 0.0
+            host_durations[host] += duration
+
+    # find the slowest host among the group
+    logger.debug('compute slowest host')
+    sorted_durations = sorted(host_durations.items(), key=lambda x: x[1])
+    durations = [x[1] for x in sorted_durations]
+    avg = sum(durations) / float(len(durations))
+
+    print('# total forks: %s' % total_forks)
+    print('# average total duration for each host: %ss' % avg)
+
+    sh = sorted_durations[-1][0]
+    print('# slowest host')
+    print(' name: %s' % sh)
+    print(' total duration: %ss' % sorted_durations[-1][1])
+    _pids = [x for x in pidsmeta.items() if sh in x[1]['hosts']]
+    bychrono = sorted(_pids, key=lambda x: x[1]['start'])
+    byduration = sorted(_pids, key=lambda x: x[1]['duration'])
+    print(' slowest task: [p=%s] %s (t=%ss)' % (
+        byduration[-1][1]['pid'],
+        byduration[-1][1]['task_name'],
+        byduration[-1][1]['duration']
+    ))
+
+    '''
+    # dump data to file for comparison
+    print('# task breakdowns')
+    rows = [['task', 'host', 'duration', 'lag', 'start', 'stop']]
+    for task,td in tasks.items():
+        _hosts = sorted(td.keys())
+        _hosts_total = len(_hosts)
+        #print('%s' % task)
+
+        # lag is the delta between a host starting vs task starting
+        starts = [td[x]['start']['ts'] for x in _hosts]
+        time0 = min(starts)
+
+        for _host in _hosts:
+            #print('\t%s - %s' % (_host, td[_host]['duration']))
+            lag = td[_host]['start']['ts'] - time0
+            row = [task, _host, td[_host]['duration'], lag, td[_host]['start']['ts'], td[_host]['stop']['ts']]
+            rows.append(row)
+            #import epdb; epdb.st()
+    '''
+
+    with open(args.durations_dest, 'w') as f:
+        cw = csv.writer(f)
+        for row in rows:
+            cw.writerow(row)
+
+    if args.host or args.task:
+        filtered_pids = set()
+        for tk,td in tasks.items():
+            if args.task and tk != args.task:
+                continue
+            for hn,hd in td.items():
+                if args.host and hn != args.host:
+                    continue
+                filtered_pids.add(hd['start']['pid'])
+        logs = []
+        for fp in filtered_pids:
+            logs += pids[fp]['log'][:]
+        #logs = sorted(logs)
+        logs = sorted(logs, key=lambda x: float(x.split()[1].replace(':', '')))
+        #import epdb; epdb.st()
+
+        lastts = None
+        for ll in logs:
+            try:
+                thists = float(ll.split()[1].replace(':', ''))
+            except Exception as e:
+                print(e)
+                import epdb; epdb.st()
+            if lastts is None:
+                lastts = thists
+            delta = thists - lastts
+            #lastts = thists
+            #print(str(delta) + ' ' + ll.encode('ascii', 'ignore').strip())
+            print('{:20f} {}'.format(delta, ll.encode('ascii', 'ignore').strip()))
+            #if delta > 50:
+            #    import epdb; epdb.st()
+            lastts = thists
+
+
+if __name__ == "__main__":
+    main()

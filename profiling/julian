@@ -1,0 +1,143 @@
+#!/bin/bash
+
+#
+# delphiki - execute a specific version of ansible wrapped in debug and strace
+#
+# how to use this script:
+#   ANSIBLE_VERSION=<VERSION> <SCRIPTNAME> <ANSIBLE_PLAYBOOK_ARGS>
+# example:
+#   ANSIBLE_VERSION=ansible-2.7.5 ./vrun.sh -i inventory -c local site.yml
+#
+
+
+CACHE="${HOME}/.ansible/vcache"
+TARCACHE="$CACHE/tars"
+EXTRACTCACHE="$CACHE/extracted"
+
+# the release tarballs are stored here
+if [[ ! -d $TARCACHE ]]; then
+    mkdir -p $TARCACHE
+fi
+if [[ ! -d $EXTRACTCACHE ]]; then
+    mkdir -p $EXTRACTCACHE
+fi
+
+
+#
+# download the release tarballs from releases
+#
+
+download_versions() {
+    if [ "$#" -eq 0 ]; then
+        echo "# CHECKING OUT DEVEL"
+        if [ ! -d $EXTRACTCACHE/devel ]; then
+            git clone https://github.com/ansible/ansible $EXTRACTCACHE/devel
+        else
+            echo "# REBASE DEVEL"
+            cd $EXTRACTCACHE/devel
+            git pull --rebase origin devel
+            cd -
+        fi
+    else
+        echo "# GET LIST OF RELEASES"
+        URL="https://releases.ansible.com/ansible"
+        curl -o $CACHE/releases.txt ${URL}/
+        TARS=$(egrep -o 'href=.*\.gz"' $CACHE/releases.txt | sed -e 's/href=//g' -e 's/\"//g' | egrep -v latest | fgrep $1)
+        for TAR in $TARS; do
+            TARDST="$TARCACHE/$TAR"
+            TARSRC="$URL/$TAR"
+            if [[ ! -f $TARDST ]]; then
+                echo "# DOWNLOAD $TARSRC"
+                curl --silent -o $TARDST $TARSRC
+                #curl -o $TARDST $TARSRC
+            fi
+        done
+    fi
+}
+
+
+#
+# extract the releases
+#
+
+extract_versions() {
+    for TAR in $(ls $TARCACHE); do
+        #echo $TAR
+        DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')"
+        #echo $DST
+        if [[ ! -d $DST ]]; then
+            tar xzf $TARCACHE/$TAR -C $EXTRACTCACHE
+        fi
+    done
+}
+
+
+#
+# not all versions had a hacking script
+#
+
+create_hacking() {
+    HACKING_URL=https://raw.githubusercontent.com/ansible/ansible/devel/hacking/env-setup
+    for TAR in $(ls $TARCACHE); do
+        #echo $TAR
+        DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')/hacking"
+        #echo $DST
+        if [[ ! -d $DST ]]; then
+            mkdir -p $DST
+            curl --silent -o $DST/env-setup $HACKING_URL
+        fi
+    done
+}
+
+
+#
+# get or set the version and then download it
+#
+
+if [[ -z "$ANSIBLE_VERSION" ]]; then
+    echo "# NO VERSION SPECIFIED"
+    if [[ -f $CACHE/version.lock ]]; then
+        ANSIBLE_VERSION=$(cat $CACHE/version.lock)
+        download_versions $ANSIBLE_VERSION
+        extract_versions
+        create_hacking
+    else
+        download_versions
+        extract_versions
+        create_hacking
+        ANSIBLE_VERSION=$(ls $EXTRACTCACHE | tail -n1 | sed 's/ansible-//g')
+    fi
+else
+    echo "# $ANSIBLE_VERSION WAS SET"
+    download_versions $ANSIBLE_VERSION
+    extract_versions
+    create_hacking
+fi
+
+echo "# VERSION SET: $ANSIBLE_VERSION"
+echo "# SOURCING $EXTRACTCACHE/$ANSIBLE_VERSION/hacking/env-setup"
+source $EXTRACTCACHE/$ANSIBLE_VERSION/hacking/env-setup
+HACKING_VERSION=$(ansible --version | head -n1 | awk '{print $2}')
+echo "# HACKING VERSION: $HACKING_VERSION"
+
+# build args for the run
+RESDIR="jobresults.${HACKING_VERSION}"
+STRACEDIR="$RESDIR/strace.out"
+STRACECMD="strace -D -s 5000 -ff -ttt -v -T -o $STRACEDIR/pid"
+STDOUTLOGFILE="$RESDIR/stdout.log"
+
+# cleanup and prep
+rm -rf $RESDIR
+mkdir -p $RESDIR
+mkdir -p $STRACEDIR
+
+# set ansible cfg
+export ANSIBLE_DEBUG=1
+export ANSIBLE_LOG_PATH=$RESDIR/syslog.log
+
+# keep track of what this is
+ansible --version > $RESDIR/version.txt
+
+# run ansible
+$STRACECMD ansible-playbook -vvvv $@ | tee -a $STDOUTLOGFILE
+echo "RC: $?"

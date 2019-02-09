@@ -72,6 +72,14 @@ def dict_generator(indict, pre=None):
         yield indict
 
 
+def pad_string(instring, fill=' ', direction='right', length=None):
+    if len(instring) < length:
+        diff = length - len(instring)
+        diff = fill.join(['' for x in range(0, diff)])
+        instring += diff
+    return instring
+
+
 class ParserDB(object):
     DB_ENGINE = {'SQLITE': 'sqlite:///lines.db'}
     db_engine = None
@@ -180,10 +188,23 @@ class InMemDB(object):
                 self.rows[idr][col] = val
 
     def process(self):
-        self.fill_timestamps()
+        #self.fill_timestamps()
         self.sort_rows_by_timestamp()
         self.build_pid_map()
         self.build_pid_info()
+        #self.fill_hosts()
+
+    def get_hosts(self):
+        hosts = {}
+        for x in self.rows:
+            if x.get('host') and x['host'] not in hosts:
+                hosts[x['host']] = x['ts']
+            elif x.get('host') and hosts[x['host']] > x['ts']:
+                hosts[x['host']] = x['ts']
+        #hosts = [x for x in hosts if x]
+        #import epdb; epdb.st()
+        hosts = sorted([x[0] for x in hosts.items()], key=lambda y: y)
+        return hosts
 
     def get_line_from_file(self, filename, linenumber):
         # FIXME - sed doesn't seem to work with sh
@@ -191,6 +212,14 @@ class InMemDB(object):
         #res = sed(args, filename)
         #import epdb; epdb.st()
         return ''
+
+    def fill_hosts(self):
+        '''Fill in the host for all pids where the host is known'''
+        logger.info('filling in hosts for all pids')
+        hosts = self.get_hosts()
+        for pid,info in self.pidinfo.items():
+            if info.get('host') is not None:
+                self.update({'pid': pid}, 'host', info['host'])
 
     def fill_timestamps(self, fill='forward'):
         logger.debug('forward filling timestamps')
@@ -220,7 +249,7 @@ class InMemDB(object):
 
     def sort_rows_by_timestamp(self, discard=True):
         if discard:
-            self.rows = [x for x in self.rows if x.get('ts')]
+            self.rows = [x for x in self.rows if x.get('ts') is not None]
         self.rows = sorted(self.rows, key=lambda x: x['ts'])
 
     def build_pid_map(self):
@@ -325,7 +354,8 @@ class InMemDB(object):
                     desc = 'sftp'
                 elif args[0].endswith('scp'):
                     desc = 'scp'
-                #import epdb; epdb.st()
+                elif 'bin' in args[0]:
+                    desc = ' '.join([args[0], args[-1]])
 
             info['stop'] = x['ts']
 
@@ -333,6 +363,7 @@ class InMemDB(object):
             logger.debug('fill in host:%s for pid:%s' % (host, pidnum))
             self.known_hosts.add(host)
             self.update({'pid': pidnum}, 'host', host)
+            self.update({'ppid': pidnum}, 'host', host)
 
         try:
             #info['duration'] = info['stop'] - info['start']
@@ -366,6 +397,10 @@ class InMemDB(object):
         if level is None:
             level = 0
 
+        # this doesn't work without strace data
+        if not pidmap:
+            return
+
         whitelist = ['task_name', 'host', 'duration', 'desc']
         #whitelist = ['task_name', 'host', 'desc']
  
@@ -386,7 +421,11 @@ class InMemDB(object):
                 thisdict[item[0]] = item[1]
 
         tr = asciitree.LeftAligned()
-        print(tr(pidmap))
+        try:
+            print(tr(pidmap))
+        except IndexError as e:
+            import epdb; epdb.st()
+
         if dest:
             with open(dest, 'w') as f:
                 f.write(tr(pidmap))
@@ -399,6 +438,178 @@ class InMemDB(object):
                 line += '%s ansible-playbook %ss' % (pid,meta['duration'])
             import epdb; epdb.st()
         '''
+
+    def print_fork_timeseries(self, dest=None):
+        width = 300
+        t0 = self.rows[0]['ts'] 
+        tN = self.rows[-1]['ts']
+        tN = [x for x in self.rows if not x.get('strace')][-1]['ts']
+        totalT = tN - t0
+
+        # make a bin for each division of the total time range
+        bindiv = totalT / width
+        bins = []
+        for x in range(0,width):
+            if not bins:
+                bins.append((t0,t0+bindiv))
+            else:
+                bins.append((bins[x-1][1], bins[x-1][1] + bindiv)) 
+
+        # map the bins to prepare for checking hosts against each bin
+        bindict = OrderedDict()
+        for _bin in bins:
+            bindict[_bin] = set()
+
+        # check if each host was executing during each of the bins
+        #hosts = sorted(self.get_hosts())
+        hosts = self.get_hosts()
+        host_times = {}
+
+        if self.pidinfo:
+            for hn in hosts:
+                hpids = [x[0] for x in self.pidinfo.items() if x[1].get('host') == hn]
+                hpids_bak = hpids[:]
+
+                for hpid in hpids:
+                    for k,v in self.pidinfo.items():
+                        if v.get('ppid') == hpid and v.get('host') != hn:
+                            self.pidinfo[k]['host'] = hn
+                            self.update({'ppid': hpid}, 'host', hn)
+
+                hpids = [x[0] for x in self.pidinfo.items() if x[1].get('host') == hn]
+                #import epdb; epdb.st()
+
+                for hpid in hpids:
+                    a = self.pidinfo[hpid]['start']
+                    b = self.pidinfo[hpid]['stop']
+                    binkeys = bindict.keys()
+
+                    for bk in binkeys:
+                        if a > bk[1]:
+                            continue
+                        if a >= bk[0] and a <= bk[1] and b >= bk[1]:
+                            bindict[bk].add(hn)
+                        if b < bk[0]:
+                            break
+
+        else:
+            for row in self.rows:            
+                if not row.get('host'):
+                    continue
+                if not row.get('ts'):
+                    continue
+                hn = row['host']
+                ts = row['ts']
+
+                '''
+                for k,v in bindict.items():
+                    if k[0] >= ts and ts <= k[1]:
+                        bindict[k].add(hn)
+                    #import epdb; epdb.st()
+                '''
+                for k,v in bindict.items():
+                    if k[0] <= ts <= k[1]:
+                        bindict[k].add(hn)
+
+        # when did each task start?
+        counter = 0
+        task_indexes = {}
+        for row in self.rows:
+            counter += 1
+            if not row.get('task_name'):
+                continue
+            if not row.get('ts'):
+                 continue
+
+            tn = row['task_name']
+            ts = row['ts']
+            #print(tn)
+
+            if tn not in task_indexes:
+                task_indexes[tn] = ts
+                continue
+            #    if task_indexes[tn] > ts:
+            #        task_indexes[tn] = ts
+
+            #if this_time > _stored_time:
+            #    stored_time = this_time
+
+            if task_indexes[tn] > ts:
+                task_indexes[tn] = ts
+
+        # fill in the gap between the first task
+        task_indexes['play_start'] = [x for x in self.rows if x.get('ts')][0]['ts']
+
+        # order by start time
+        task_indexes = sorted(task_indexes.items(), key=lambda x: x[1])
+
+        # reshape with index
+        for idx,x in enumerate(task_indexes):
+            task_indexes[idx] = [idx, x[0], x[1]]
+            hl = max([1+len(x) for x in hosts] + [10])
+
+        # build titlebar
+        title = [pad_string('hostname', length=hl), '|']
+
+        # fill in task start markers
+        for ti in task_indexes:
+            a = ti[2] 
+            try:
+                b = task_indexes[ti[0]+1][2]
+            except IndexError:
+                b = None
+
+            # count how many bins this task lived in
+            #bins = [1 for x in bindict.items() if x[0][0] <= t1 and t2 >= x[0][1]]
+            #bins = len(bins)
+            bins = 0
+            inphase = False
+            for bk,_hosts in bindict.items():
+                if a > bk[1]:
+                    continue
+                if a >= bk[0] and a <= bk[1]:
+                    inphase = True
+                    bins += 1
+                    continue
+                if inphase:
+                    if b < bk[0]:
+                        break
+                    bins += 1
+
+            if ti[0] == 0:
+                coln = ''
+            else:
+                coln = 't%s' % (ti[0] - 1)
+            coln = pad_string(coln, length=bins)
+            title.append(coln)
+
+        # def pad_string(instring, fill=' ', direction='right', length=None):
+        with open(dest, 'w') as f:
+
+            #import epdb; epdb.st()
+            f.write(''.join(title) + '\n')
+
+            for hn in hosts:
+                '''
+                _hn = hn[:]
+                if len(hn) < hl:
+                    diff = hl - len(_hn)
+                    _hn = _hn + ' '.join(['' for x in range(0,diff)])
+                _hn += '|'
+                '''
+                _hn = pad_string(hn, length=hl)
+                _hn += '|'
+                f.write(_hn)
+                for bk,bh in bindict.items():
+                    if hn in bh:
+                        f.write('x')
+                    else:
+                        f.write(' ')
+                f.write('\n')
+
+        #import epdb; epdb.st()
+
+
 
 def split_executor_line(line):
     '''Chop all of the info from a taskexecutor log entry'''
@@ -465,7 +676,7 @@ def split_executor_line(line):
         'uid': uid,
         'uuid': uuid,
         'host': host,
-        'task': task
+        'task_name': task
     }
 
 
@@ -635,6 +846,9 @@ def parse_syslog_line(filename, linenumber, line):
     #    m = re.search(r'ansible-playbook \d+\.\d+\..*', line)
     #    ansible_version = m.group()
 
+    #if data.get('task_name') and data.get('host'):
+    #    print(data)
+
     return data
 
 
@@ -769,6 +983,7 @@ def main():
 
     DB.process()
     DB.print_detailed_tree(dest=os.path.join(args.directory, 'pidtree.txt'))
+    DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime.txt'))
     DB.select(ppid=None, pid=5976, task_name=None, host=None, strace=None, raw=True)
     #import epdb; epdb.st()
 

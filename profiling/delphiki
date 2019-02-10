@@ -23,9 +23,11 @@ import csv
 import glob
 import json
 import os
+import pickle
 import re
 import sys
 import sqlite3
+import termcolor
 
 from collections import OrderedDict
 from pprint import pprint
@@ -38,6 +40,9 @@ from sqlalchemy import select
 from sqlalchemy import Table, Boolean, Column, Integer, Float, String, MetaData, ForeignKey
 #conn = sqlite3.connect('parsed.db')
 #curs = conn.cursor()
+
+
+COLORS = ['grey', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
 
 
 # https://stackoverflow.com/a/19871956
@@ -187,12 +192,16 @@ class InMemDB(object):
             if match:
                 self.rows[idr][col] = val
 
+    def update_pid_meta_file(self, pidnum, key, value):
+        import epdb; epdb.st()
+
     def process(self):
         #self.fill_timestamps()
         self.sort_rows_by_timestamp()
         self.build_pid_map()
         self.build_pid_info()
         #self.fill_hosts()
+        import epdb; epdb.st()
 
     def get_hosts(self):
         hosts = {}
@@ -357,7 +366,8 @@ class InMemDB(object):
                 elif 'bin' in args[0]:
                     desc = ' '.join([args[0], args[-1]])
 
-            info['stop'] = x['ts']
+            #info['stop'] = x['ts']
+            info['stop'] = row['ts']
 
         if host:
             logger.debug('fill in host:%s for pid:%s' % (host, pidnum))
@@ -390,6 +400,14 @@ class InMemDB(object):
                 if pid not in self.pidinfo:
                     self.pidinfo[pid] = self.identify_pid(pid)
 
+    def update_pid_meta_file(self, pidnum, key, value):
+        cfile = os.path.join(self.cachedir, '%s.info' % pidnum)
+        with open(cfile, 'r') as f:
+            data = json.loads(f.read())
+        data[key] = value
+        with open(cfile, 'w') as f:
+            f.write(json.dumps(data))
+
     def print_detailed_tree(self, pidmap=None, level=None, dest=None):
 
         if pidmap is None:
@@ -407,7 +425,7 @@ class InMemDB(object):
         for k,v in self.pidinfo.items():
             res = list(findkeys(pidmap, k))
             thisdict = res[0]
-            items = thisdict.items()[:]
+            items = list(thisdict.items())[:]
             keys = [x[0] for x in items]
             for key in keys:
                 thisdict.pop(key, None)
@@ -439,11 +457,19 @@ class InMemDB(object):
             import epdb; epdb.st()
         '''
 
-    def print_fork_timeseries(self, dest=None):
-        width = 300
+    def print_fork_timeseries(self, dest=None, timescale=None):
+
+        # timescale forces the total time to be static
+
+        width = 350
         t0 = self.rows[0]['ts'] 
-        tN = self.rows[-1]['ts']
-        tN = [x for x in self.rows if not x.get('strace')][-1]['ts']
+        if timescale:
+            tN = t0 + float(timescale)
+        else:
+            tN = self.rows[-1]['ts']
+            # strace can hang around long after playbook waiting on controlpersist
+            tN = [x for x in self.rows if not x.get('strace')][-1]['ts']
+
         totalT = tN - t0
 
         # make a bin for each division of the total time range
@@ -523,16 +549,10 @@ class InMemDB(object):
 
             tn = row['task_name']
             ts = row['ts']
-            #print(tn)
 
             if tn not in task_indexes:
                 task_indexes[tn] = ts
                 continue
-            #    if task_indexes[tn] > ts:
-            #        task_indexes[tn] = ts
-
-            #if this_time > _stored_time:
-            #    stored_time = this_time
 
             if task_indexes[tn] > ts:
                 task_indexes[tn] = ts
@@ -547,6 +567,15 @@ class InMemDB(object):
         for idx,x in enumerate(task_indexes):
             task_indexes[idx] = [idx, x[0], x[1]]
             hl = max([1+len(x) for x in hosts] + [10])
+
+        # create colormap
+        colors = []
+        for idx,x in enumerate(task_indexes):
+            if not colors:
+                colors = COLORS[:]
+            task_indexes[idx].append(colors[0])
+            colors = colors[1:]
+            #import epdb; epdb.st()
 
         # build titlebar
         title = [pad_string('hostname', length=hl), '|']
@@ -572,7 +601,9 @@ class InMemDB(object):
                     bins += 1
                     continue
                 if inphase:
-                    if b < bk[0]:
+                    #if b is None or bk[0] is None:
+                    #    import epdb; epdb.st()
+                    if b is None or b < bk[0]:
                         break
                     bins += 1
 
@@ -581,28 +612,52 @@ class InMemDB(object):
             else:
                 coln = 't%s' % (ti[0] - 1)
             coln = pad_string(coln, length=bins)
+            coln = termcolor.colored(coln, ti[3])
             title.append(coln)
+
+
+        data = {
+            'bindict':bindict,
+            'task_indexes': task_indexes,
+            'hosts':hosts,
+            'colors': colors
+        }
+        with open('/tmp/data.pickle', 'wb') as f:
+            pickle.dump(data, f)
 
         # def pad_string(instring, fill=' ', direction='right', length=None):
         with open(dest, 'w') as f:
 
+            for ti in task_indexes:
+                f.write('# t%s: %s\n' % (ti[0]-1, ti[1]))
             #import epdb; epdb.st()
+
             f.write(''.join(title) + '\n')
 
             for hn in hosts:
-                '''
-                _hn = hn[:]
-                if len(hn) < hl:
-                    diff = hl - len(_hn)
-                    _hn = _hn + ' '.join(['' for x in range(0,diff)])
-                _hn += '|'
-                '''
+                logger.debug('write %s row' % hn)
                 _hn = pad_string(hn, length=hl)
                 _hn += '|'
                 f.write(_hn)
                 for bk,bh in bindict.items():
+
+                    # what task are we in right now?
+                    color = None
+                    for idx,ti in enumerate(task_indexes):
+                        if bk[0] <= ti[2] <= bk[1]:
+                            color = ti[3]
+                            break
+                        try:
+                            if bk[0] > ti[2] and bk[1] < task_indexes[idx+1][2]:
+                                color = ti[3]
+                        except IndexError:
+                            color = ti[3]
+
+                    if not color:
+                        import epdb; epdb.st()
+
                     if hn in bh:
-                        f.write('x')
+                        f.write(termcolor.colored('x', color))
                     else:
                         f.write(' ')
                 f.write('\n')
@@ -983,8 +1038,9 @@ def main():
 
     DB.process()
     DB.print_detailed_tree(dest=os.path.join(args.directory, 'pidtree.txt'))
-    DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime.txt'))
-    DB.select(ppid=None, pid=5976, task_name=None, host=None, strace=None, raw=True)
+    #DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime.txt'))
+    DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime_abs.txt'), timescale=125)
+    #DB.select(ppid=None, pid=5976, task_name=None, host=None, strace=None, raw=True)
     #import epdb; epdb.st()
 
 

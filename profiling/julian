@@ -39,7 +39,6 @@ if [[ ! -d $EXTRACTCACHE ]]; then
     mkdir -p $EXTRACTCACHE
 fi
 
-
 #
 # download the release tarballs from releases
 #
@@ -72,7 +71,6 @@ download_versions() {
     fi
 }
 
-
 #
 # extract the releases
 #
@@ -87,7 +85,6 @@ extract_versions() {
         fi
     done
 }
-
 
 #
 # not all versions had a hacking script

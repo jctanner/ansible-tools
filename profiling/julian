@@ -1,8 +1,12 @@
 #!/bin/bash
 
 #
-# julian - execute a specific version of ansible wrapped in debug and strace
-# delphiki - parses and analyzes the output of julian
+# julian - run ansible in the most debugged form possible
+#   * runs a specific version of ansible from a release tar or git
+#   * straces ansible and it's child pids
+#   * runs top in batch mode
+#   * runs vmstat in batch mode
+#   * stores the outputs in a common directory
 #
 # how to use this script:
 #   ANSIBLE_VERSION=<VERSION> ./julian <ANSIBLE_PLAYBOOK_ARGS>
@@ -10,12 +14,24 @@
 #   ANSIBLE_VERSION=ansible-2.7.5 ./vrun.sh -i inventory -c local site.yml
 #
 
+#
+# kill any background pids on exit
+#
+
+trap "kill 0" exit
+
+#
+# globals
+#
 
 CACHE="${HOME}/.ansible/vcache"
 TARCACHE="$CACHE/tars"
 EXTRACTCACHE="$CACHE/extracted"
 
+#
 # the release tarballs are stored here
+#
+
 if [[ ! -d $TARCACHE ]]; then
     mkdir -p $TARCACHE
 fi
@@ -121,24 +137,51 @@ source $EXTRACTCACHE/$ANSIBLE_VERSION/hacking/env-setup
 HACKING_VERSION=$(ansible --version | head -n1 | awk '{print $2}')
 echo "# HACKING VERSION: $HACKING_VERSION"
 
+#
 # build args for the run
+#
+
 RESDIR="jobresults.${HACKING_VERSION}"
 STRACEDIR="$RESDIR/strace.out"
 STRACECMD="strace -D -s 5000 -ff -ttt -v -T -o $STRACEDIR/pid"
 STDOUTLOGFILE="$RESDIR/stdout.log"
 
+#
 # cleanup and prep
+#
+
 rm -rf $RESDIR
 mkdir -p $RESDIR
 mkdir -p $STRACEDIR
 
+#
 # set ansible cfg
+#
+
 export ANSIBLE_DEBUG=1
 export ANSIBLE_LOG_PATH=$RESDIR/syslog.log
 
+#
 # keep track of what this is
+#
+
 ansible --version > $RESDIR/version.txt
 
+#
+# start vmstat
+#
+rm -f $RESDIR/vmstat.log
+vmstat -t 1 >> $RESDIR/vmstat.log &
+
+#
+# start top
+#
+rm -f $RESDIR/top.log
+top -d 1 -b >> $RESDIR/top.log &
+
+#
 # run ansible
+#
+
 $STRACECMD ansible-playbook -vvvv $@ | tee -a $STDOUTLOGFILE
 echo "RC: $?"

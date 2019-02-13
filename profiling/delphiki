@@ -20,10 +20,12 @@ import argparse
 import asciitree
 import ast
 import csv
+import datetime
 import glob
 import json
 import os
 import pickle
+import pytz
 import re
 import sys
 import sqlite3
@@ -35,13 +37,14 @@ from pprint import pprint
 from logzero import logger
 from sh import sed
 
+from sqlalchemy import bindparam
 from sqlalchemy import create_engine
 from sqlalchemy import select
 from sqlalchemy import Table, Boolean, Column, Integer, Float, String, MetaData, ForeignKey
-#conn = sqlite3.connect('parsed.db')
-#curs = conn.cursor()
 
 
+VMSTAT_TIMEZONE = None
+LAST_TOP = None
 COLORS = ['grey', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
 
 
@@ -85,14 +88,21 @@ def pad_string(instring, fill=' ', direction='right', length=None):
     return instring
 
 
-class ParserDB(object):
-    DB_ENGINE = {'SQLITE': 'sqlite:///lines.db'}
+class OnDiskDB(object):
+    #DB_ENGINE = {'SQLITE': 'sqlite:///lines.db'}
+    engine_url = None
     db_engine = None
     lines = None
+    loaded = None
+    to_insert = None
 
-    def __init__(self, dbtype='SQLITE', dbname='linesdb'):
-        engine_url = self.DB_ENGINE[dbtype].format(DB=dbname)
-        self.db_engine = create_engine(engine_url)
+    def __init__(self, dbfile=None, dbtype='SQLITE', dbname='linesdb'):
+        #engine_url = self.DB_ENGINE[dbtype].format(DB=dbname)
+        #self.engine_url = 'sqlite:///' + os.path.abspath(dbfile)
+        self.engine_url = 'sqlite://'
+        #import epdb; epdb.st()
+        self.db_engine = create_engine(self.engine_url)
+        self.to_insert = []
 
     def create_db_tables(self):
         metadata = MetaData()
@@ -103,21 +113,92 @@ class ParserDB(object):
             Column('stdout', Boolean, default=False),
             Column('syslog', Boolean, default=False),
             Column('strace', Boolean, default=False),
+            Column('vmstat', Boolean, default=False),
+            Column('top', Boolean, default=False),
             Column('pid', Integer),
             Column('ppid', Integer),
             Column('ts', Float),
             Column('duration', Float),
             Column('host', String),
-            Column('data', String)
+            Column('playbook', String),
+            Column('play_name', String),
+            Column('task_name', String),
+            Column('task_uuid', String),
+            Column('task_number', String),
+            Column('data', String),
+            Column('vmstat_bi', Integer),
+            Column('vmstat_bo', Integer),
+            Column('vmstat_buff', Integer),
+            Column('vmstat_cache', Integer),
+            Column('vmstat_cs', Integer),
+            Column('vmstat_free', Integer),
+            Column('vmstat_id', Integer),
+            Column('vmstat_in', Integer),
+            Column('vmstat_r', Integer),
+            Column('vmstat_si', Integer),
+            Column('vmstat_so', Integer),
+            Column('vmstat_st', Integer),
+            Column('vmstat_swpd', Integer),
+            Column('vmstat_sy', Integer),
+            Column('vmstat_us', Integer),
+            Column('vmstat_wa', Integer),
         )
         metadata.create_all(self.db_engine)
 
     def add_line(self, data, **kwargs):
+        logger.debug('%s:%s' % (data['filename'], data['linenumber']))
+        '''
+        checkres = self.db_engine.execute(
+            "select count(*) from lines where filename = '%s' and linenumber = %s" % (data['filename'], data['linenumber'])
+        )
+        checkres = [x for x in checkres]
+        if checkres[0][0] >= 1:
+            return
+        '''
+
+        '''
         inskwargs = {}
         for k,v in kwargs.items():
             inskwargs[k] = v
-        ins = self.lines.insert().values(data=data, **inskwargs)
-        res = self.db_engine.execute(ins)
+        #import epdb; epdb.st()
+        try:
+            ins = self.lines.insert().values(**inskwargs)
+        except AttributeError as e:
+            print(e)
+            import epdb; epdb.st()
+        '''
+
+        self.to_insert.append(data)
+
+        if len(self.to_insert) >= 50000:
+            self.flush_inserts()
+
+        #res = self.db_engine.execute(ins)
+        #import epdb; epdb.st()
+
+    def flush_inserts(self, commit=True):
+        logger.info('flush to_insert (%s) cache start' % len(self.to_insert))
+        colnames = [x.name for x in self.lines.columns]
+        if commit:
+            trans = self.db_engine.begin()
+
+        for idt,ti in enumerate(self.to_insert):
+            inskwargs = {}
+            for k,v in ti.items():
+                if k not in colnames:
+                    continue
+                inskwargs[k] = v
+            logger.debug(idt)
+            ins = self.lines.insert().values(**inskwargs)
+            self.db_engine.execute(ins)
+
+        #import epdb; epdb.st()
+        if commit:
+            logger.info('flush to_insert cache [commit] start')
+            trans.transaction.commit()
+            logger.info('flush to_insert cache [commit] done')
+        self.to_insert = []
+        logger.info('flush to_insert cache done')
         #import epdb; epdb.st()
 
     def get_lines(self, limit=None):
@@ -136,6 +217,8 @@ class InMemDB(object):
 
     '''A SQL+pandas like thingy'''
 
+    odb = None
+    odb_file = None
     cachedir = None
     rows = None
     pidmap = None
@@ -149,14 +232,34 @@ class InMemDB(object):
         self.cachedir = cachedir
         if self.cachedir and not os.path.exists(self.cachedir):
             os.makedirs(self.cachedir)
+        self.odb_file = os.path.join(self.cachedir, 'metadata.db')
+        self.init_db()
         self.rows = []
         self.pidmap = {}
         self.pidinfo = {}
         self.known_hosts = set()
         self._filled_ppids = []
 
+    def init_db(self):
+        if not os.path.exists(self.odb_file):
+            self.odb = OnDiskDB(dbfile=self.odb_file)
+            self.odb.create_db_tables()
+            self.odb.loaded = False
+        else:
+            self.odb = OnDiskDB(dbfile=self.odb_file)
+            self.odb.loaded = True
+
     def add_row(self, row):
         self.rows.append(row)
+        #if row.get('ts') is not None:
+        #    self.odb.add_line(row)
+        #if not self.odb.loaded:
+        #    self.odb.add_line(row)
+        #import epdb; epdb.st()
+        self.odb.add_line(row)
+
+    def finalize(self):
+        self.odb.flush_inserts()
 
     def select(self, ppid=None, pid=None, task_name=None, host=None, strace=None, raw=False):
         res = []
@@ -200,8 +303,8 @@ class InMemDB(object):
         self.sort_rows_by_timestamp()
         self.build_pid_map()
         self.build_pid_info()
-        #self.fill_hosts()
-        import epdb; epdb.st()
+        self.fill_tasks()
+        self.fill_hosts()
 
     def get_hosts(self):
         hosts = {}
@@ -217,7 +320,8 @@ class InMemDB(object):
 
     def get_line_from_file(self, filename, linenumber):
         # FIXME - sed doesn't seem to work with sh
-        args = "'%sq;d'" % (int(linenumber) + 1)
+        #args = "'%sq;d'" % (int(linenumber) + 1)
+        args = "%sq;d" % (int(linenumber) + 1)
         #res = sed(args, filename)
         #import epdb; epdb.st()
         return ''
@@ -228,7 +332,15 @@ class InMemDB(object):
         hosts = self.get_hosts()
         for pid,info in self.pidinfo.items():
             if info.get('host') is not None:
+                # fill in the rows
                 self.update({'pid': pid}, 'host', info['host'])
+                # fill in the meta
+                self.update_pid_meta_file(pidnum, 'host', info['host'])
+
+    def fill_tasks(self):
+        '''Fill in the task name for pids where ppid has a name'''
+        for pid,info in self.pidinfo.items():
+            import epdb; epdb.st()
 
     def fill_timestamps(self, fill='forward'):
         logger.debug('forward filling timestamps')
@@ -457,6 +569,31 @@ class InMemDB(object):
             import epdb; epdb.st()
         '''
 
+    def graph_fork_timeseries(self, dest=None, timescale=None):
+        # use sqllite as much as possible
+        '''
+        qs = 'select ts,task_name,host from lines' 
+        qs += ' where pid IS NOT NULL and task_name IS NOT NULL and host IS NOT NULL' 
+        qs += ' order by ts'
+        cursor = self.odb.db_engine.execute(qs)
+        observations = [list(x) for x in cursor]
+        '''
+
+        colnames = [x.name for x in self.odb.lines.columns]
+        qs = 'select * from lines where ts IS NOT NULL'
+        cursor = self.odb.db_engine.execute(qs)
+        obs = []
+        for x in cursor:
+            data = {}
+            for idc,col in enumerate(x):
+                data[colnames[idc]] = col
+            obs.append(data)
+        obs = sorted(obs, key=lambda x: x['ts'])
+
+        obsfile = os.path.join(self.cachedir, 'observations.json')
+        with open(obsfile, 'w') as f:
+            f.write(json.dumps(obs))
+
     def print_fork_timeseries(self, dest=None, timescale=None):
 
         # timescale forces the total time to be static
@@ -616,21 +753,20 @@ class InMemDB(object):
             title.append(coln)
 
 
+        # pickle for later graphing ...
         data = {
             'bindict':bindict,
             'task_indexes': task_indexes,
             'hosts':hosts,
             'colors': colors
         }
-        with open('/tmp/data.pickle', 'wb') as f:
+        with open(os.path.join(self.cachedir, 'data.pickle'), 'wb') as f:
             pickle.dump(data, f)
 
-        # def pad_string(instring, fill=' ', direction='right', length=None):
         with open(dest, 'w') as f:
 
             for ti in task_indexes:
                 f.write('# t%s: %s\n' % (ti[0]-1, ti[1]))
-            #import epdb; epdb.st()
 
             f.write(''.join(title) + '\n')
 
@@ -661,9 +797,6 @@ class InMemDB(object):
                     else:
                         f.write(' ')
                 f.write('\n')
-
-        #import epdb; epdb.st()
-
 
 
 def split_executor_line(line):
@@ -955,12 +1088,123 @@ def parse_stdout_log(filename, linenumber, line, current_task_name=None):
     return data
 
 
+def parse_vmstat_line(line):
+    # procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu----- -----timestamp-----
+    #  r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st                 UTC
+    #  2  0  43836 1524804  31152 278956  148   75   154    83   21    8  0  0 98  2  0 2019-02-11 16:13:04
+    #  0  1  2     3        4     5       6    7     8     9    10   11 12 13 14 15 16  17         18
+    cols = line.split()
+    data = {
+        'vmstat_r': int(cols[0]),
+        'vmstat_b': int(cols[1]),
+        'vmstat_swpd': int(cols[2]),
+        'vmstat_free': int(cols[3]),
+        'vmstat_buff': int(cols[4]),
+        'vmstat_cache': int(cols[5]),
+        'vmstat_si': int(cols[6]),
+        'vmstat_so': int(cols[7]),
+        'vmstat_bi': int(cols[8]),
+        'vmstat_bo': int(cols[9]),
+        'vmstat_in': int(cols[10]),
+        'vmstat_cs': int(cols[11]),
+        'vmstat_us': int(cols[12]),
+        'vmstat_sy': int(cols[13]),
+        'vmstat_id': int(cols[14]),
+        'vmstat_wa': int(cols[15]),
+        'vmstat_st': int(cols[16]),
+    }
+
+    '''
+    ts = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+    ts = ts.timestamp()
+    data['ts'] = ts
+    '''
+
+    ts = cols[17] + ' ' + cols[18]
+    tstmp = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+    tz = getattr(pytz, VMSTAT_TIMEZONE.lower())
+
+    # datetime.datetime(2019,2,11,16,13,4, tzinfo=pytz.utc).timestamp()
+    tzts = datetime.datetime(tstmp.year, tstmp.month, tstmp.day, tstmp.hour, tstmp.minute, tstmp.second, tzinfo=tz)
+
+    data['ts'] = tzts.timestamp()
+
+    return data
+
+
+def parse_top_line(line):
+    # top - 16:13:04 up 17 days, 21:39,  1 user,  load average: 0.08, 0.03, 0.05
+    # Tasks:  84 total,   2 running,  77 sleeping,   2 stopped,   2 zombie
+    # KiB Mem :  1882220 total,  1513532 free,    56916 used,   311772 buff/cache
+    # KiB Swap:  2097148 total,  2053312 free,    43836 used.  1597056 avail Mem
+
+    global LAST_TOP
+
+    data = {}
+    if line.startswith('top -'):
+        cols = line.split()
+        data = {
+            'users': cols[7],
+            'load_1': cols[11],
+            'load_5': cols[12],
+            'load_15': cols[13],
+            'tasks': None,
+            'running': None,
+            'sleeping': None,
+            'stopped': None,
+            'zombie': None,
+            'kib_mem_total': None,
+            'kib_mem_free': None,
+            'kib_mem_used': None,
+            'kib_mem_buff/cache': None,
+        }
+
+        # FIXME - value is negative...
+        ts = cols[2]
+        ts = datetime.datetime.strptime(ts, '%H:%M:%S')
+        ts = ts.timestamp()
+        data['ts'] = ts
+        LAST_TOP = data.copy()
+
+    elif line.startswith('Tasks:'):
+        cols = line.split()
+        data = {
+            'tasks': int(cols[1]),
+            'running': int(cols[3]),
+            'sleeping': int(cols[5]),
+            'stopped': int(cols[7]),
+            'zombie': int(cols[9])
+        }
+        LAST_TOP.update(data)
+        data = LAST_TOP.copy()
+
+    elif line.startswith('KiB Mem'):
+        cols = line.split()
+        data = {
+            'kib_mem_total': int(cols[3]),
+            'kib_mem_free': int(cols[5]),
+            'kib_mem_used': int(cols[7]),
+            'kib_mem_buff/cache': int(cols[9]),
+        }
+        LAST_TOP.update(data)
+        data = LAST_TOP.copy()
+
+    return data
+
+
 def main():
+
+    global VMSTAT_TIMEZONE
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--dest', help="DEPRECATED")
     parser.add_argument('--durations-dest', default='/tmp/durations.csv', help="csv file to store the results")
     parser.add_argument('--log-dest', default='/tmp/combined.log', help="log file to store the combined logs")
+    parser.add_argument('--nostrace', action='store_true')
+    parser.add_argument('--nosyslog', action='store_true')
+    parser.add_argument('--nostdout', action='store_true')
+    parser.add_argument('--novmstat', action='store_true')
+    parser.add_argument('--notop', action='store_true')
     parser.add_argument('--host')
     parser.add_argument('--task')
     parser.add_argument('--pid')
@@ -974,17 +1218,8 @@ def main():
     _fns  += glob.glob('%s/*.log' % args.directory)
     _fns += glob.glob('%s/strace*/*' % args.directory) 
     filenames = sorted(set([x for x in _fns if os.path.isfile(x)]))
-    #import epdb; epdb.st()
-
-
-    '''
-    DB = ParserDB()
-    DB.create_db_tables()
-    DB.add_line(filename='foo.txt', linenumber=3, data='foobar')
-    '''
 
     DB = InMemDB(cachedir=os.path.join(args.directory, '.cache'))
-    #import epdb; epdb.st()
 
     # found in the logs ...
     ansible_version = None
@@ -1013,34 +1248,69 @@ def main():
 
                 # strace
                 if 'strace' in fn:
-                    row = parse_strace_line(fn, lineno, line)
-                    DB.add_row(row)
+                    if not args.nostrace:
+                        row = parse_strace_line(fn, lineno, line)
+                        row['strace'] = True
+                        DB.add_row(row)
                     continue
 
                 # syslog
                 if 'p=' in line and 'u=' in line:
+                    if not args.nosyslog:
+                        if 'ansible-playbook' in line:
+                            m = re.search(r'ansible-playbook \d+\.\d+\..*', line)
+                            ansible_version = m.group()
 
-                    if 'ansible-playbook' in line:
-                        m = re.search(r'ansible-playbook \d+\.\d+\..*', line)
-                        ansible_version = m.group()
+                        data = parse_syslog_line(fn, lineno, line)
+                        data['syslog'] = True
+                        DB.add_row(data)
+                    continue
 
-                    data = parse_syslog_line(fn, lineno, line)
-                    DB.add_row(data)
+                # vmstat
+                if os.path.basename(fn) == 'vmstat.log':
+                    if line.startswith('procs ---'):
+                        continue
+                    if line.lstrip().startswith('r  b'):
+                        VMSTAT_TIMEZONE = line.strip().split()[-1]
+                        continue
+                    if not args.novmstat:
+                        data = parse_vmstat_line(line)
+                        data['vmstat'] = True
+                        data['filename'] = fn
+                        data['linenumber'] = lineno
+                        DB.add_row(data)
+                    continue
+
+                # top
+                if os.path.basename(fn) == 'top.log':
+                    if not args.notop:
+                        data = parse_top_line(line)
+                        data['top'] = True
+                        data['filename'] = fn
+                        data['linenumber'] = lineno
+                        if data.get('kib_mem_free') is not None:
+                            if data['ts'] > 0:
+                                DB.add_row(data)
                     continue
 
                 # stdout
-                row = parse_stdout_log(fn, lineno, line, current_task_name=current_task_name)
-                if row.get('task_name'):
-                    current_task_name = row['task_name']
-                DB.add_row(row)
-                #import epdb; epdb.st()
+                if not args.nostdout:
+                    row = parse_stdout_log(fn, lineno, line, current_task_name=current_task_name)
+                    #if row.get('task_name'):
+                    #    current_task_name = row['task_name']
+                    row['stdout'] = True
+                    row['filename'] = fn
+                    row['linenumber'] = lineno
+                    DB.add_row(row)
 
-
+    DB.finalize()
     DB.process()
     DB.print_detailed_tree(dest=os.path.join(args.directory, 'pidtree.txt'))
     #DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime.txt'))
-    DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime_abs.txt'), timescale=125)
+    #DB.print_fork_timeseries(dest=os.path.join(args.directory, 'forktime_abs.txt'), timescale=125)
+    DB.graph_fork_timeseries(dest=os.path.join(args.directory, 'forktime_abs.txt'), timescale=125)
     #DB.select(ppid=None, pid=5976, task_name=None, host=None, strace=None, raw=True)
+
     #import epdb; epdb.st()
 
 

@@ -48,6 +48,14 @@ LAST_TOP = None
 COLORS = ['grey', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
 
 
+def isfloat(a, ignore=None):
+    bad = [x for x in a if not x.isdigit() and x != '.']
+    if ignore:
+        bad = [x for x in bad if x not in ignore]
+    if bad:
+        return False
+    return True
+
 # https://stackoverflow.com/a/19871956
 def findkeys(node, kv):
     if isinstance(node, list):
@@ -188,7 +196,7 @@ class OnDiskDB(object):
                 if k not in colnames:
                     continue
                 inskwargs[k] = v
-            logger.debug(idt)
+            #logger.debug(idt)
             ins = self.lines.insert().values(**inskwargs)
             self.db_engine.execute(ins)
 
@@ -228,8 +236,9 @@ class InMemDB(object):
     _ppids_filled = None
     _filled_ppids = None
 
-    def __init__(self, cachedir=None):
+    def __init__(self, cachedir=None, usesql=True):
         self.cachedir = cachedir
+        self.usesql = usesql
         if self.cachedir and not os.path.exists(self.cachedir):
             os.makedirs(self.cachedir)
         self.odb_file = os.path.join(self.cachedir, 'metadata.db')
@@ -256,7 +265,8 @@ class InMemDB(object):
         #if not self.odb.loaded:
         #    self.odb.add_line(row)
         #import epdb; epdb.st()
-        self.odb.add_line(row)
+        if self.usesql:
+            self.odb.add_line(row)
 
     def finalize(self):
         self.odb.flush_inserts()
@@ -799,7 +809,7 @@ class InMemDB(object):
                 f.write('\n')
 
 
-def split_executor_line(line):
+def split_executor_line(line, level=None):
     '''Chop all of the info from a taskexecutor log entry'''
 
     # 2018-10-12 01:29:39,173 p=5489 u=vagrant |    7705 1539307779.17295:
@@ -807,6 +817,17 @@ def split_executor_line(line):
     # 2018-10-12 01:29:39,654 p=5489 u=vagrant |    7591 1539307779.65405:
     #   done running TaskExecutor() for sshd_60/TASK: Check for /usr/local/sync (Target Directory) [525400a6-0421-65e9-9a84-000000000032]
     # 5502 1539307714.25537: done running TaskExecutor() for sshd_250/TASK: wipe out the rules [525400a6-0421-65e9-9a84-00000000002e]
+
+    host = None
+    date = None
+    time = None
+    ts = None
+    ppid = None
+    pid = None
+    uid = None
+    uuid = None
+    task_name = None
+    task = None
 
     parts = line.split()
     if parts[4] != '|' and not parts[0].isdigit():
@@ -822,38 +843,81 @@ def split_executor_line(line):
             parts[0] = parts[0].split(badchars[-1])[-1]
             #import epdb; epdb.st()
 
+    # sometimes in -syslog- the lines are mixed
+    if len(parts) > 20 and level is None:
+        starts = re.findall(r'\d+-\d+-\d+\ \d+:\d+:\d+,\d+\ p=\d+\ u=\w+\ \|\W+ ', line)
+        if len(starts) > 1:
+            newlines = []
+            starts = OrderedDict(((x,None) for x in starts))
+            for k,v in starts.items():
+                starts[k] = line.index(k)
+            items = list(starts.items())
+            for idi,item in enumerate(starts.items()):
+                end = None
+                try:
+                    end = items[idi+1][1]
+                except IndexError:
+                    pass
+                newlines.append(line[item[1]:end])
+            for idnl,nl in enumerate(newlines):
+                ldata = split_executor_line(nl, level=1)
+                newlines[idnl] = ldata
+                #import epdb; epdb.st()
+            #print(newlines)
+            #import epdb; epdb.st()
+            return newlines
+
     if parts[4] == '|':
         # pylogging
         date = parts[0]
         time = parts[1]
         ppid = int(parts[2].replace('p=', ''))
         uid = parts[3].replace('u=', '')
-        pid = int(parts[5])
-        ts = float(parts[6].replace(':', ''))
+
+        # pre 2.8 
+        if parts[5].isdigit():
+            pid = int(parts[5])
+            ts = float(parts[6].replace(':', ''))
+
+        # 2.8
+        if parts[5].startswith('<') and parts[5].endswith('>'):
+            host = parts[5].replace('<', '').replace('>', '')
+            #print(parts[:10])
+            #def isfloat(a, ignore=None):
+            #import epdb; epdb.st()
+
+        # locate the pid
+        if pid is None:
+            pids = [x for x in parts if x.isdigit()] 
+            if pids:
+                pid = int(pids[0])
+
+        # locate the timestamp
+        if ts is None:
+            timestamps = [x for x in parts if x.endswith(':') and isfloat(x, ignore=':')]
+            if timestamps:
+                ts = float(timestamps[0].replace(':', ''))
+
     else:
         # stdout+stderr
-        date = None
-        time = None
-        ppid = None
-        uid = None
-        try:
-            pid = int(parts[0])
-        except Exception as e:
-            print(e)
-            import epdb; epdb.st()
+        pid = int(parts[0])
         ts = float(parts[1].replace(':', ''))
 
-    uuid = None
     if parts[-1].startswith('[') and parts[-1].endswith(']'):
         uuid = parts[-1].replace('[', '').replace(']', '')
 
-    for_index = parts.index('for')
-    host = parts[for_index+1].split('/', 1)[0]
+    # this is a special place in the line
+    for_index = None
+    if 'for' in parts:
+        for_index = parts.index('for')
+        if uuid:
+            task = ' '.join(parts[for_index+2:-1])
+        else:
+            task = ' '.join(parts[for_index+2:])
 
-    if uuid:
-        task = ' '.join(parts[for_index+2:-1])
-    else:
-        task = ' '.join(parts[for_index+2:])
+    # this may have been found earlier
+    if host is None and for_index:
+        host = parts[for_index+1].split('/', 1)[0]
 
     return {
         'date': date,
@@ -1025,10 +1089,28 @@ def parse_syslog_line(filename, linenumber, line):
     # pylogging entries
     if ': running TaskExecutor() for ' in line:
         #data = split_executor_line(line)
-        data.update(split_executor_line(line))
+        ldata = split_executor_line(line)
+        if not isinstance(ldata, list):
+            data.update(split_executor_line(line))
+        else:
+            datasets = []
+            for ld in ldata:
+                newdata = data.copy()
+                newdata.update(ld)
+                datasets.append(newdata)
+            return datasets
 
     elif ': done running TaskExecutor() for ' in line:
-        data.update(split_executor_line(line))
+        ldata = split_executor_line(line)
+        if not isinstance(ldata, list):
+            data.update(split_executor_line(line))
+        else:
+            datasets = []
+            for ld in ldata:
+                newdata = data.copy()
+                newdata.update(ld)
+                datasets.append(newdata)
+            return datasets
 
     #if 'ansible-playbook' in line:
     #    m = re.search(r'ansible-playbook \d+\.\d+\..*', line)
@@ -1122,7 +1204,11 @@ def parse_vmstat_line(line):
 
     ts = cols[17] + ' ' + cols[18]
     tstmp = datetime.datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
-    tz = getattr(pytz, VMSTAT_TIMEZONE.lower())
+
+    try:
+        tz = getattr(pytz, VMSTAT_TIMEZONE.lower())
+    except AttributeError as e:
+        tz = pytz.timezone(VMSTAT_TIMEZONE.upper())
 
     # datetime.datetime(2019,2,11,16,13,4, tzinfo=pytz.utc).timestamp()
     tzts = datetime.datetime(tstmp.year, tstmp.month, tstmp.day, tstmp.hour, tstmp.minute, tstmp.second, tzinfo=tz)
@@ -1200,6 +1286,7 @@ def main():
     parser.add_argument('--dest', help="DEPRECATED")
     parser.add_argument('--durations-dest', default='/tmp/durations.csv', help="csv file to store the results")
     parser.add_argument('--log-dest', default='/tmp/combined.log', help="log file to store the combined logs")
+    parser.add_argument('--nosql', action='store_true')
     parser.add_argument('--nostrace', action='store_true')
     parser.add_argument('--nosyslog', action='store_true')
     parser.add_argument('--nostdout', action='store_true')
@@ -1219,7 +1306,7 @@ def main():
     _fns += glob.glob('%s/strace*/*' % args.directory) 
     filenames = sorted(set([x for x in _fns if os.path.isfile(x)]))
 
-    DB = InMemDB(cachedir=os.path.join(args.directory, '.cache'))
+    DB = InMemDB(cachedir=os.path.join(args.directory, '.cache'), usesql=not args.nosql)
 
     # found in the logs ...
     ansible_version = None
@@ -1262,8 +1349,13 @@ def main():
                             ansible_version = m.group()
 
                         data = parse_syslog_line(fn, lineno, line)
-                        data['syslog'] = True
-                        DB.add_row(data)
+                        if not isinstance(data, list):
+                            data['syslog'] = True
+                            DB.add_row(data)
+                        else:
+                            for dl in data:
+                                dl['syslog'] = True
+                                DB.add_row(dl)
                     continue
 
                 # vmstat

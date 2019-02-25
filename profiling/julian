@@ -18,7 +18,9 @@
 # kill any background pids on exit
 #
 
-trap "kill 0" exit
+if [[ $JULIAN_TRAP -ne 0 ]]; then
+    trap "kill 0" exit
+fi
 
 #
 # globals
@@ -52,6 +54,23 @@ download_versions() {
             echo "# REBASE DEVEL"
             cd $EXTRACTCACHE/devel
             git pull --rebase origin devel
+            cd -
+        fi
+    elif [[ $1 != "ansible"* ]]; then
+        echo "# GET HASH $1"
+        if [ ! -d $EXTRACTCACHE/$1 ]; then
+            if [ ! -d $EXTRACTDIR/devel ]; then
+                git clone https://github.com/ansible/ansible $EXTRACTDIR/devel
+            else
+                cd $EXTRACTDIR/devel
+                git pull --rebase origin devel
+                cd -
+            fi
+            #mkdir $EXTRACTCACHE/$1
+            #git clone https://github.com/ansible/ansible $EXTRACTCACHE/$1
+            cp -Rp $EXTRACTDIR/devel $EXTRACTCACHE/$1
+            cd $EXTRACTCACHE/$1
+            git checkout $1
             cd -
         fi
     else
@@ -119,7 +138,7 @@ if [[ -z "$ANSIBLE_VERSION" ]]; then
         download_versions
         extract_versions
         create_hacking
-        ANSIBLE_VERSION=$(ls $EXTRACTCACHE | tail -n1 | sed 's/ansible-//g')
+        ANSIBLE_VERSION=$(ls $EXTRACTCACHE | egrep -e 'ansible-' -e 'devel' | tail -n1 | sed 's/ansible-//g')
     fi
 else
     echo "# $ANSIBLE_VERSION WAS SET"
@@ -138,9 +157,13 @@ echo "# HACKING VERSION: $HACKING_VERSION"
 # build args for the run
 #
 
-RESDIR="jobresults.${HACKING_VERSION}"
+RESDIR="jobresults.${HACKING_VERSION}.${ANSIBLE_VERSION}"
 STRACEDIR="$RESDIR/strace.out"
-STRACECMD="strace -D -s 5000 -ff -ttt -v -T -o $STRACEDIR/pid"
+if [[ $ANSIBLE_STRACE -eq 0 ]]; then
+    STRACECMD=""
+else
+    STRACECMD="strace -D -s 5000 -ff -ttt -v -T -o $STRACEDIR/pid"
+fi
 STDOUTLOGFILE="$RESDIR/stdout.log"
 
 #
@@ -155,8 +178,32 @@ mkdir -p $STRACEDIR
 # set ansible cfg
 #
 
-export ANSIBLE_DEBUG=1
-export ANSIBLE_LOG_PATH=$RESDIR/syslog.log
+if [[ $JULIAN_DEBUG -ne 0 ]]; then
+    export ANSIBLE_DEBUG=1
+fi
+if [[ $JULIAN_SYSLOG -ne 0 ]]; then
+    export ANSIBLE_LOG_PATH=$RESDIR/syslog.log
+fi
+
+#
+# turn on/off verbose mode
+#
+
+if [[ $JULIAN_VERBOSE -ne 0 ]]; then
+    VERBOSE="-vvvv"
+else
+    VERBOSE=""
+fi
+
+#
+# turn on/off baseline
+#
+
+if [[ $JULIAN_BASELINE -ne 0 ]]; then
+    #echo "turning on baseline"
+    export BASELINE_WRITE_JSON=1
+    export BASELINE_JSON_FILE=$RESDIR/baseline.json
+fi
 
 #
 # keep track of what this is
@@ -167,18 +214,28 @@ ansible --version > $RESDIR/version.txt
 #
 # start vmstat
 #
-rm -f $RESDIR/vmstat.log
-vmstat -t 1 >> $RESDIR/vmstat.log &
+if [[ $JULIAN_VMSTAT -ne 0 ]]; then
+    echo "# starting vmstat"
+    rm -f $RESDIR/vmstat.log
+    vmstat -t 1 >> $RESDIR/vmstat.log &
+fi
 
 #
 # start top
 #
-rm -f $RESDIR/top.log
-top -d 1 -b >> $RESDIR/top.log &
+if [[ $JULIAN_TOP -ne 0 ]]; then
+    echo "# starting top"
+    rm -f $RESDIR/top.log
+    top -d 1 -b >> $RESDIR/top.log &
+fi
 
 #
 # run ansible
 #
 
-$STRACECMD ansible-playbook -vvvv $@ | tee -a $STDOUTLOGFILE
+$STRACECMD ansible-playbook $VERBOSE $@ | tee -a $STDOUTLOGFILE
+
 echo "RC: $?"
+#ps aux | fgrep -i vmstat | awk '{print $2}' | xargs kill
+#ps aux | fgrep -i top | awk '{print $2}' | xargs kill
+

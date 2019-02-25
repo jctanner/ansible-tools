@@ -36,6 +36,7 @@ from pprint import pprint
 
 from logzero import logger
 from sh import sed
+from sh import wc
 
 from sqlalchemy import bindparam
 from sqlalchemy import create_engine
@@ -299,6 +300,8 @@ class InMemDB(object):
         for idr,row in enumerate(self.rows):
             match = True
             for k,v in selector.items():
+                if k not in row:
+                    continue
                 if row[k] != v:
                     match = False
                     break                
@@ -345,12 +348,14 @@ class InMemDB(object):
                 # fill in the rows
                 self.update({'pid': pid}, 'host', info['host'])
                 # fill in the meta
-                self.update_pid_meta_file(pidnum, 'host', info['host'])
+                #self.update_pid_meta_file(pidnum, 'host', info['host'])
+                self.update_pid_meta_file(pid, 'host', info['host'])
 
     def fill_tasks(self):
         '''Fill in the task name for pids where ppid has a name'''
-        for pid,info in self.pidinfo.items():
-            import epdb; epdb.st()
+        #for pid,info in self.pidinfo.items():
+        #    import epdb; epdb.st()
+        pass
 
     def fill_timestamps(self, fill='forward'):
         logger.debug('forward filling timestamps')
@@ -375,6 +380,8 @@ class InMemDB(object):
     def fill_ppid(self, pid, ppid):
         logger.debug('fill in pid %s ppid as %s' % (pid, ppid))
         for idx,x in enumerate(self.rows):
+            if not x.get('pid'):
+                continue
             if x['pid'] == pid:
                 self.rows[idx]['ppid'] = ppid
 
@@ -438,9 +445,22 @@ class InMemDB(object):
         self.pidmap = pidmap.copy()
 
         if self.cachedir:
+            pfile = os.path.join(self.cachedir, 'pidmap_pids.pickle')
+            try:
+                with open(pfile, 'wb') as f:
+                    pickle.dump(pidmap, f)
+            except Exception as e:
+                #import epdb; epdb.st()
+                pass
+            
             cfile = os.path.join(self.cachedir, 'pidmap_pids.json')
-            with open(cfile, 'w') as f:
-                f.write(json.dumps(pidmap, indent=2, sort_keys=True))
+            try:
+                with open(cfile, 'w') as f:
+                    f.write(json.dumps(pidmap, indent=2, sort_keys=True))
+            except TypeError as e:
+                print(e)
+                #import epdb; epdb.st()
+                pass
 
     def identify_pid(self, pidnum):
 
@@ -465,7 +485,7 @@ class InMemDB(object):
         host = None
         desc = None
 
-        rows = [x for x in self.rows if x['pid'] == pidnum]
+        rows = [x for x in self.rows if x.get('pid') and x['pid'] == pidnum]
         for idp, row in enumerate(rows):
             if not info['start']:
                 info['start'] = row['ts']
@@ -501,6 +521,8 @@ class InMemDB(object):
             #info['duration'] = info['stop'] - info['start']
             info['duration'] = rows[-1]['ts'] - rows[0]['ts']
         except TypeError:
+            pass
+        except IndexError:
             pass
 
         info['desc'] = desc
@@ -990,7 +1012,10 @@ def split_ssh_exec(line):
 def parse_strace_line(filename, linenumber, line):
 
     pidnum = int(filename.split('.')[-1])
-    ts = re.search(r'\d+\.\d+', line).group()
+    try:
+        ts = re.search(r'\d+\.\d+', line).group()
+    except AttributeError as e:
+        return None
 
     syscall = None
     try:
@@ -1302,8 +1327,9 @@ def main():
     assert os.path.isdir(args.directory)
 
     _fns = []    
-    _fns  += glob.glob('%s/*.log' % args.directory)
-    _fns += glob.glob('%s/strace*/*' % args.directory) 
+    _fns += glob.glob('%s/*.log' % args.directory)
+    if not args.nostrace:
+        _fns += glob.glob('%s/strace*/*' % args.directory) 
     filenames = sorted(set([x for x in _fns if os.path.isfile(x)]))
 
     DB = InMemDB(cachedir=os.path.join(args.directory, '.cache'), usesql=not args.nosql)
@@ -1326,6 +1352,8 @@ def main():
             # this pops up in the stdout logs once or twice
             current_task_name = None
 
+            res = wc('-l', fn)
+            totallines = int(res.split()[0])
             lineno = -1
             for line in f.readlines():
                 lineno += 1
@@ -1337,8 +1365,13 @@ def main():
                 if 'strace' in fn:
                     if not args.nostrace:
                         row = parse_strace_line(fn, lineno, line)
-                        row['strace'] = True
-                        DB.add_row(row)
+                        if row is None:
+                            continue
+                        #import epdb; epdb.st()
+                        if lineno == 0 or lineno >= totallines or row.get('syscall') in ['execve'] or row.get('clones'):
+                            #import epdb; epdb.st()
+                            row['strace'] = True
+                            DB.add_row(row)
                     continue
 
                 # syslog
@@ -1350,10 +1383,10 @@ def main():
 
                         data = parse_syslog_line(fn, lineno, line)
                         if not isinstance(data, list):
-                            data['syslog'] = True
-                            DB.add_row(data)
-                        else:
-                            for dl in data:
+                            data = [data]
+                        for dl in data:
+                            if lineno == 0 or dl.get('host'):
+                                #import epdb; epdb.st()
                                 dl['syslog'] = True
                                 DB.add_row(dl)
                     continue
@@ -1388,12 +1421,15 @@ def main():
                 # stdout
                 if not args.nostdout:
                     row = parse_stdout_log(fn, lineno, line, current_task_name=current_task_name)
-                    #if row.get('task_name'):
-                    #    current_task_name = row['task_name']
-                    row['stdout'] = True
-                    row['filename'] = fn
-                    row['linenumber'] = lineno
-                    DB.add_row(row)
+                    # speed this up by filtering task events
+                    if row.get('task_name'):
+                        current_task_name = row.get('task_name')
+                    if row.get('host') or lineno == 0:
+                        #import epdb; epdb.st()
+                        row['stdout'] = True
+                        row['filename'] = fn
+                        row['linenumber'] = lineno
+                        DB.add_row(row)
 
     DB.finalize()
     DB.process()

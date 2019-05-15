@@ -13,4 +13,4 @@
   shell: tower-cli config verify_ssl false
 
 - name: set the towercli creds
-  shell: tower-cli login admin --insecure --password={{ tower_api_pass }}
+  shell: tower-cli login admin --password={{ tower_api_pass }}

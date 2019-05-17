@@ -1,3 +1,19 @@
+- name: remove the demo project directory
+  file:
+    path: /var/lib/awx/projects/{{ demo_project }}
+    state: absent
+    owner: awx
+    group: awx
+  become: True
+
+- name: clean the demo project
+  tower_project:
+    name: "{{ demo_project }}"
+    state: absent
+    #local_path: "{{ '/var/lib/awx/projects/' +  demo_project }}"
+    local_path: "{{ demo_project }}"
+  ignore_errors: True
+
 - name: create the demo project directory
   file:
     path: /var/lib/awx/projects/{{ demo_project }}
@@ -6,9 +22,13 @@
     group: awx
   become: True
 
+- shell: find /var/lib/awx/projects
+  become: True
+
 - name: create the demo project
   tower_project:
     name: "{{ demo_project }}"
     state: present
-    local_path: "{{ '/var/lib/awx/projects/' +  demo_project }}"
+    #local_path: "{{ '/var/lib/awx/projects/' +  demo_project }}"
+    local_path: "{{ demo_project }}"
   ignore_errors: True

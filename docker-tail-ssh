@@ -1,0 +1,4 @@
+#!/bin/bash
+
+CONTAINER=$(docker ps | tail -n1 | awk '{print $1}')
+docker exec -it $CONTAINER /bin/bash

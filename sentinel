@@ -1,0 +1,62 @@
+#!/bin/bash
+
+
+# sentinel - kill an ansible playbook if it "hangs" on a task for "too long"
+#
+# usage:
+#   * place this script at /usr/local/bin/ansible-playbook
+#   * run ansible-playbook as you normall would
+#   * watch ansible die if something takes longer than $MAX_SECONDS
+
+
+set -o pipefail
+
+MAX_SECONDS=10
+
+KILL_CHILD () {
+    # recursively kill a pid
+
+    # kill recursive children first
+    CPID=$1
+    CPIDS=$(ps xao ppid,pid | awk '{print $1 " " $2}' | egrep ^"$CPID ")
+    for CCPID in $CPIDS; do
+        if [[ $CCPID != $CPID ]]; then
+            KILL_CHILD $CCPID
+        fi
+    done
+
+    # kill the primary
+    echo "KILLING $CPID" >> /tmp/test.log
+    kill -9 $CPID
+}
+
+
+#echo "start" >> /tmp/test.log
+ansible-playbook $@ &
+PARENT=$!
+
+#echo "set trap" >> /tmp/test.log
+trap "kill $PARENT 2> /dev/null" EXIT
+
+while kill -0 $PARENT 2> /dev/null; do
+    #date >> /tmp/test.log
+    #echo "PARENT: $PARENT" >> /tmp/test.log
+    CPIDS=$(ps xao ppid,pid | awk '{print $1 " " $2}' | egrep ^"$PARENT ")
+    #echo "CPIDS: $CPIDS" >> /tmp/test.log
+    for CPID in $CPIDS; do
+        if [[ $CPID != $PARENT ]]; then
+            ELAPSED=$(ps -p $CPID -o etimes | tail -n1 | tr -d ' ')
+            #echo "$CPID $ELAPSED" >> /tmp/test.log
+
+            if [[ $ELAPSED -ge $MAX_SECONDS ]]; then
+                KILL_CHILD $CPID
+            fi
+
+        fi
+    done
+    #echo "sleep 2" >> /tmp/test.log
+    sleep 2
+done
+
+#echo "unset trap" >> /tmp/test.log
+trap - EXIT

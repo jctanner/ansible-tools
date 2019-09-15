@@ -167,7 +167,7 @@ fi
 # build args for the run
 #
 
-RESDIR="jobresults.${HACKING_VERSION}.${ANSIBLE_VERSION}"
+RESDIR="jobresults.${HACKING_VERSION}.${ANSIBLE_VERSION}.$(date +%Y-%m-%dT%H-%M-%S.%s)"
 STRACEDIR="$RESDIR/strace.out"
 if [[ $ANSIBLE_STRACE -eq 0 ]]; then
     STRACECMD=""

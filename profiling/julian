@@ -29,6 +29,7 @@ fi
 CACHE="${HOME}/.ansible/vcache"
 TARCACHE="$CACHE/tars"
 EXTRACTCACHE="$CACHE/extracted"
+echo "# EXTRACTCACHE $EXTRACTCACHE"
 
 #
 # the release tarballs are stored here
@@ -38,7 +39,7 @@ if [[ ! -d $TARCACHE ]]; then
     mkdir -p $TARCACHE
 fi
 if [[ ! -d $EXTRACTCACHE ]]; then
-    mkdir -p $EXTRACTCACHE
+    mkdir -p $EXTRACTCACHE/devel
 fi
 
 #
@@ -59,8 +60,8 @@ download_versions() {
     elif [[ $1 != "ansible"* ]]; then
         echo "# GET HASH $1"
         if [ ! -d $EXTRACTCACHE/$1 ]; then
-            if [ ! -d $EXTRACTDIR/devel ]; then
-                git clone https://github.com/ansible/ansible $EXTRACTDIR/devel
+            if [ ! -d $EXTRACTCACHE/devel ]; then
+                git clone https://github.com/ansible/ansible $EXTRACTCACHE/devel
             else
                 cd $EXTRACTDIR/devel
                 git pull --rebase origin devel
@@ -117,11 +118,15 @@ create_hacking() {
         #echo $DST
         if [[ ! -d $DST ]]; then
             mkdir -p $DST
-            curl --silent -o $DST/env-setup $HACKING_URL
+            #curl --silent -o $DST/env-setup $HACKING_URL
+            #cp $EXTRACTCACHE/devel/hacking/env-setup $DST/env-setup
+        fi
+        if [[ ! -f $DST/env-setup ]]; then
+            #curl --silent -o $DST/env-setup $HACKING_URL
+            cp $EXTRACTCACHE/devel/hacking/env-setup $DST/env-setup
         fi
     done
 }
-
 
 #
 # get or set the version and then download it
@@ -152,6 +157,11 @@ echo "# SOURCING $EXTRACTCACHE/$ANSIBLE_VERSION/hacking/env-setup"
 source $EXTRACTCACHE/$ANSIBLE_VERSION/hacking/env-setup
 HACKING_VERSION=$(ansible --version | head -n1 | awk '{print $2}')
 echo "# HACKING VERSION: $HACKING_VERSION"
+
+if [[ -z $HACKING_VERSION ]]; then
+    echo "NO HACKING VERSION WAS SET!!!"
+    exit 1
+fi
 
 #
 # build args for the run

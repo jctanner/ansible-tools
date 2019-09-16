@@ -286,3 +286,6 @@ echo "# FULLCMD: $FULLCMD"
 
 $STRACECMD $CGROUPCMD ansible-playbook $VERBOSE $@ | tee -a $STDOUTLOGFILE
 echo "RC: $?"
+
+killall top || echo "no top pids found"
+killall vmstat || echo "no vmstat pids found"

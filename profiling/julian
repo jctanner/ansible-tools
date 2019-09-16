@@ -47,6 +47,9 @@ fi
 #
 
 download_versions() {
+    if [ ! -d $EXTRACTCACHE/devel ]; then
+        git clone https://github.com/ansible/ansible $EXTRACTCACHE/devel
+
     if [ "$#" -eq 0 ]; then
         echo "# CHECKING OUT DEVEL"
         if [ ! -d $EXTRACTCACHE/devel ]; then

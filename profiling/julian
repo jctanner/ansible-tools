@@ -282,7 +282,7 @@ fi
 if [[ $JULIAN_TOP -ne 0 ]]; then
     echo "# starting top"
     rm -f $RESDIR/top.log
-    top -c -d 1 -b >> $RESDIR/top.log &
+    COLUMNS=1000 top -c -d 1 -b >> $RESDIR/top.log &
 fi
 
 

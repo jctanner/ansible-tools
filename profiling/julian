@@ -285,6 +285,23 @@ if [[ $JULIAN_TOP -ne 0 ]]; then
     COLUMNS=1000 top -c -d 1 -b >> $RESDIR/top.log &
 fi
 
+#
+# start netstat capture
+#
+
+if [[ $JULIAN_NETDEV -ne 0 ]]; then
+    cat << EOF > /tmp/netdev_logger.sh
+    #!/bin/bash
+    while True; do
+        date -u +%s >> $RESDIR/netstat.log
+        cat /proc/net/dev >> $RESDIR/netstat.log
+        sleep 1
+    done
+    EOF
+    chmod +x /tmp/netdev_logger.sh
+    ./tmp/netdev_logger.sh &
+fi
+
 
 #
 # run ansible

@@ -288,14 +288,11 @@ fi
 #
 # start netstat capture
 #
-cat << EOF > /tmp/netdev_logger.sh
-#!/bin/bash
-while True; do
-    date -u +%s >> $RESDIR/netstat.log
-    cat /proc/net/dev >> $RESDIR/netstat.log
-    sleep 1
-done
-EOF 
+echo "while true; do" > /tmp/netdev_logger.sh
+echo "  date -u +%s >> $RESDIR/netstat.log" >> /tmp/netdev_logger.sh
+echo "  cat /proc/net/dev >> $RESDIR/netstat.log" >> /tmp/netdev_logger.sh
+echo "  sleep 1" >> /tmp/netdev_logger.sh
+echo "done" >> /tmp/netdev_logger.sh
 chmod +x /tmp/netdev_logger.sh
 
 if [[ $JULIAN_NETDEV -ne 0 ]]; then

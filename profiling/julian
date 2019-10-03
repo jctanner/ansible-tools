@@ -121,7 +121,7 @@ create_hacking() {
         #echo $TAR
         DST="$EXTRACTCACHE/$(echo $TAR | sed 's/\.tar\.gz//')/hacking"
         #echo $DST
-        if [[ ! -d $DST ]]; then
+        if [[ ! -d $DST ]] || [[ ! -f $DST/env-setup ]]; then
             mkdir -p $DST
             #curl --silent -o $DST/env-setup $HACKING_URL
             #cp $EXTRACTCACHE/devel/hacking/env-setup $DST/env-setup

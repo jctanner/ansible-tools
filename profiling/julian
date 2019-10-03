@@ -296,7 +296,7 @@ echo "done" >> /tmp/netdev_logger.sh
 chmod +x /tmp/netdev_logger.sh
 
 if [[ $JULIAN_NETDEV -ne 0 ]]; then
-    /tmp/netdev_logger.sh >> $RESDIR/netstat.log &
+    /tmp/netdev_logger.sh >> $RESDIR/netdev.log &
 fi
 
 

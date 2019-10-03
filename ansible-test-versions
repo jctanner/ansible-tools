@@ -54,7 +54,10 @@ def list_versions(args):
     else:
         command = 'ansible-list-versions'
     (rc, so, se) = run_command(command, capture=True)
-    versions = so.split('\n')
+    try:
+        versions = so.split('\n')
+    except TypeError:
+        versions = so.decode('utf-8').split('\n')
     versions = [x.strip() for x in versions if x.strip()]
     return versions
 
@@ -114,18 +117,18 @@ def main():
 
     results = []
     for x in test_versions:
-        print '###################################'
-        print "# TESTING: %s" % x
-        print '###################################'
+        print('###################################')
+        print("# TESTING: %s" % x)
+        print('###################################')
         rc = test_version(x, test_script)
         results.append((x, rc))
         with open(LOGFILE, 'a') as f:
             f.write('%s ; %s\n' % (x, rc))
 
-    print ''
-    print '###################################'
-    print "#            RESULTS              #"
-    print '###################################'
+    print('')
+    print('###################################')
+    print("#            RESULTS              #")
+    print('###################################')
     pprint(results)
 
 if __name__ == '__main__':

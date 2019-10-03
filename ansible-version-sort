@@ -61,7 +61,7 @@ def main():
         vmap.pop(devel, None)
 
     # sort by version
-    _versions = sorted(vmap.items(), key=lambda tup: tup[1])
+    _versions = sorted(vmap.items(), key=lambda tup: str(tup[1]))
 
     # get the original keys
     final_sorted_versions = [x[0] for x in _versions] + [devel]

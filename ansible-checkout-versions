@@ -73,7 +73,11 @@ def main():
     get_clean_cache(args.verbose)
 
     (rc, so, se) = run_command('ansible-list-versions', args.verbose)
-    VERSIONS = [x.strip() for x in so.split('\n')
+    try:
+        lines = so.split('\n')
+    except TypeError:
+        lines = so.decode('utf-8').split('\n')
+    VERSIONS = [x.strip() for x in lines
                 if x.strip() and 'devel' not in x]
 
     for V in VERSIONS:

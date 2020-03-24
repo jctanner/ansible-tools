@@ -6,7 +6,7 @@ with open('README.md') as f:
     readme = f.read()
 
 
-with open('LICENSE.txt') as f:
+with open('LICENSE') as f:
     license = f.read()
 
 setup(

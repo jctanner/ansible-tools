@@ -63,6 +63,20 @@ def get_clean_cache(verbose=False):
 
 def main():
 
+    global CACHEDIR
+    global CORECACHEDIR
+    global EXTRASCACHEDIR
+    global BASEDIR
+
+    (rc, so, se) = run_command('ansible-tools-cachedir', False)
+    if isinstance(so, bytes):
+        so = so.decode('utf-8')
+    cachedir = so.strip()
+    CACHEDIR = os.path.join(cachedir, "ansible.checkout.clean")
+    CORECACHEDIR = os.path.join(cachedir, "ansible-modules-core.checkout.clean")
+    EXTRASCACHEDIR = os.path.join(cachedir, "ansible-modules-extras.checkout.clean")
+    BASEDIR = os.path.join(cachedir, "version_checkouts")
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args()

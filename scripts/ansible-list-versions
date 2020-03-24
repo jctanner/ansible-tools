@@ -4,7 +4,7 @@
 USECACHE=$1
 
 CWD=$(pwd)
-CACHEDIR=/var/cache/ansible/ansible.checkout.clean
+CACHEDIR=$(ansible-tools-cachedir)/ansible.checkout.clean
 if [ ! -d $CACHEDIR ]; then
     git clone https://github.com/ansible/ansible.git \
         --recursive $CACHEDIR >/dev/null 2>&1

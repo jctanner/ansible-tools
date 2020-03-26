@@ -16,10 +16,7 @@ from sh import git
 from sh import tar
 from logzero import logger
 
-
-CACHE="/var/lib/awx/projects/.vcache"
-TARCACHE="$CACHE/tars"
-EXTRACTCACHE="$CACHE/extracted"
+from ansible_tools.config import ANSIBLE_TOOLS_CACHEDIR
 
 
 def run_command(args, env=None, capture=False, shell=True):
@@ -31,15 +28,6 @@ def run_command(args, env=None, capture=False, shell=True):
         kwargs['env'] = env
     p = subprocess.Popen(args, **kwargs)
 
-    '''
-    if not capture:
-        p = subprocess.Popen(args, shell=True)
-    else:
-        p = subprocess.Popen(args, shell=True,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE,
-                             env=env)
-    '''
     (so, se) = p.communicate()
     return (p.returncode, so, se)
 
@@ -51,7 +39,7 @@ class AnsibleVersionTester(object):
 
     def __init__(self, cachedir=None):
         if cachedir is None:
-            cachedir = CACHE
+            cachedir = ANSIBLE_TOOLS_CACHEDIR
         self.cachedir = cachedir
         self.extractdir = os.path.join(self.cachedir, 'extracted')
         self.develdir = os.path.join(self.cachedir, 'checkouts', 'ansible-devel')
@@ -237,24 +225,3 @@ class AnsibleVersionTester(object):
         logger.info('###################################')
         pprint(results)
 
-
-def main():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--start', help='skip testing versions up to this version')
-    parser.add_argument('--version', help='the ansible version to use')
-    parser.add_argument('--python', help='python interpreter to use')
-    parser.add_argument('script', nargs='+', help='the test script or scripts to use')
-    args = parser.parse_args()
-
-    avt = AnsibleVersionTester()
-    avt.run_test(
-        start=args.start,
-        version=args.version,
-        python=args.python,
-        command=' '.join(args.script)
-    )
-
-
-if __name__ == "__main__":
-    main()

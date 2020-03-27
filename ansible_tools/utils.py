@@ -252,7 +252,11 @@ class AnsibleVersionTester(object):
                 vdir = self.develdir
             else:
                 raise Exception('%s does not exist')
+
         hacking_script = os.path.join(vdir, 'hacking', 'env-setup')
+        if not os.path.exists(hacking_script):
+            src = os.path.join(self.develdir, 'hacking', 'env-setup')
+            shutil.copy(src, hacking_script)
         command = 'source %s >/dev/null 2>&1 ; %s' % (hacking_script, params)
 
         if 'ansible-playbook' in command:
@@ -267,9 +271,14 @@ class AnsibleVersionTester(object):
         if python:
             env['TEST_PYTHON'] = python
         logger.info(command)
-        (rc, so, se) = run_command(command, capture=False, env=env)
-        print(so)
-        print(se)
+
+        #capture = True
+        capture = False
+        (rc, so, se) = run_command(command, capture=capture, env=env)
+        if capture:
+            print(so)
+            print(se)
+
         return rc
 
     def run_test(self, start=None, version=None, python=None, command=None):

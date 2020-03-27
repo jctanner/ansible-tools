@@ -128,10 +128,10 @@ PLAYBOOK = '''
 TESTSH = '''
 #!/bin/bash
 export SSH_AUTH_SOCK=0
-VERSION=\$(ansible --version | head -n1 | awk '{print \$2}')
+VERSION=$(ansible --version | head -n1 | awk '{print $2}')
 ansible-playbook -vvvv -i inventory site.yml
-RC=\$?
-exit \$RC
+RC=$?
+exit $RC
 '''
 #chmod +x test.sh
 
@@ -160,10 +160,6 @@ for VERSION in \$VERSIONS; do
     STATERC=\$(fgrep "\$VERSION ;" returncodes.txt | tail -n1 | cut -d\; -f2)
     echo "\$VERSION | \$STATERC"
 done
-EOF
-chmod +x report.sh
-echo $TICKETDIR
-echo $TICKETDIR > /tmp/ansible.workon
 '''
 
 

@@ -41,131 +41,10 @@ def run_command(args, env=None, capture=False, shell=True):
     return (p.returncode, so, se)
 
 
-class Version2(Version):
-
-    @property
-    def version(self):
-		# (Epdb) pp vmap['v2.4.0.0-0.4.rc4'].version
-		# [2, 4, 0, 0, '-', 0, 4, 'rc', 4]
-        version = self.base_version
-        return version
-
-
-def vcompare(version):
-    #[2, 8, 0, 'a', 1]
-    #[2, 8, 0, 'b', 1]
-    #[2, 8, 0, 'rc', 1]
-    #[2, 8, 0, 'rc', 2]
-    #[2, 8, 0, 'rc', 3]
-    #[2, 8, 0]
-
-    print(version)
-
-    version = version.version
-    if not isinstance(version, list):
-        version = version.split('.')
-    while [x for x in version if not isinstance(x, int)]:
-        for ix,x in enumerate(version):
-            if isinstance(x, int):
-                continue
-            if x == 'rc' or x.endswith('rc'):
-                version[ix] = -1
-            elif x == 'b' or x.endswith('b'):
-                version[ix] = -2
-            elif x == 'beta' or x.endswith('beta'):
-                version[ix] = -2
-            elif x == 'a' or x.endswith('a'):
-                version[ix] = -3
-            elif x == 'dev' or x.endswith('dev'):
-                version[ix] = -4
-            elif not isinstance(x, int):
-                del version[ix]
-
-    '''
-    if len(version) < 2:
-        import epdb; epdb.st()
-
-    if version[0] == 2 and version[1] == 5:
-        import epdb; epdb.st()
-
-    while len(version) < 8:
-        version.append(0)
-    '''
-
-    #version = [999 + x for x in version]
-    total = 0
-    print(version)
-    enumerated= []
-    for idx,x in enumerate(version):
-        '''
-        if idx == -1:
-            total += (float(8) / idx) * (1 + x)
-        elif x < 0:
-            total += (float(8) / idx) * (1 + x)
-        else:
-            total += (float(8) / idx + 1) * (1 + x)
-        '''
-
-        '''
-        idx += 1
-        #nt = (float(8) / idx) * x
-        if x == 0:
-            nt = (float(8 - idx)) / (x+1)
-        else:
-            nt = (float(8 - idx) / (x+1))
-        print('\t%s:%s == %s' % (idx, x, nt))
-        total += nt
-        '''
-
-        '''
-        base = [9] * (2 * (len(version) - idx))
-        print('\t%s' % base)
-        basesum = sum(base)
-        print('\t%s:%s basesum:%s' % (idx, x, basesum))
-        ns = (basesum + x)
-        print('\t%s:%s == %s' % (idx, x, ns))
-        total += ns
-        #import epdb; epdb.st()
-        '''
-
-        '''
-        base = [9] * (2 * (len(version) - idx))
-        print('\t%s' % base)
-        basesum = sum(base)
-        print('\t%s:%s basesum:%s' % (idx, x, basesum))
-        ns = total * (basesum + x)
-        print('\t%s:%s == %s' % (idx, x, ns))
-        total += ns
-        #import epdb; epdb.st()
-        '''
-        base = [9] * 1000 * (len(version) - idx)
-        if x == 0:
-            #ns = sum(base) + x
-            #ns = sum(base) / x
-            ns = sum(base)
-        #elif x == 0:
-        #    ns = sum(base)
-        else:
-            #ns = sum(base) - (-2 * x)
-            #ns = sum(base) / x
-            ns = sum(base) / x
-        enumerated.append(ns)
-        #import epdb; epdb.st()
-        total += ns
-
-
-    print('TOTAL %s=%s %s' % (version,total, enumerated))
-    #return total
-    return enumerated
-    #import epdb; epdb.st()
-
-    #import epdb; epdb.st()
-    #print(version)
-    #return version
-
-
-
 def _version_to_list(version):
+
+    '''Normalize whacky version strings to numerical lists'''
+
     separator_words = [
         ['rc'],
         ['beta', 'b'],
@@ -209,7 +88,10 @@ def _version_to_list(version):
 
     return _version
 
+
 def sort_versions(versions):
+
+    ''' Sort ansible's whacky multiple version schemes '''
 
     devel = False
     if 'devel' in versions:
@@ -238,67 +120,6 @@ def sort_versions(versions):
         result.append('devel')
 
     return result
-
-
-def _sort_versions(versions):
-
-    '''
-    vfile = '/tmp/versions.json'
-    if not os.path.exists(vfile):
-        with open(vfile, 'w') as f:
-            f.write(json.dumps(versions))
-    '''
-
-    vmap = dict(zip(versions[:], versions[:]))
-    devel = None
-    usev = False
-
-    for k,v in vmap.items():
-        if v.startswith('devel'):
-            devel = k
-            continue
-        if v.startswith('v'):
-            usev = True
-            v = v[1:]
-
-        # Try Version or LooseVersion where possible
-        for x in ['Version', 'LooseVersion']:
-            try:
-                if x == 'Version' and v.startswith('2.5'):
-                    v = Version2(v)
-                    converted = True
-                    break
-                elif x == 'LooseVersion':
-                    v = LooseVersion(v)
-                    converted = True
-                    break
-            except Exception as e:
-                pass
-
-        vmap[k] = vcompare(v)
-        vmap[k] = v
-
-    # save devel for last
-    if devel:
-        vmap.pop(devel, None)
-
-    # sort by version
-    #_versions = sorted(vmap.items(), key=lambda tup: str(tup[1]))
-    #_versions = sorted(vmap.items(), key=lambda tup: tup[1])
-    x1_versions = sorted([x for x in vmap.items() if x[1].version[0] == 1], key=lambda tup: tup[1])
-    x2_versions = sorted([x for x in vmap.items() if x[1].version[0] == 2], key=lambda tup: tup[1])
-    #_versions = sorted(vmap.items(), key=lambda tup: tup[1])
-    import epdb; epdb.st()
-
-    # get the original keys
-    final_sorted_versions = [x[0] for x in _versions] + [devel]
-
-    #for fv in final_sorted_versions:
-    #    print(fv)
-
-    from pprint import pprint; pprint(final_sorted_versions)
-    import epdb; epdb.st()
-    return final_sorted_versions
 
 
 class AnsibleVersionTester(object):

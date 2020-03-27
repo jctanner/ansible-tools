@@ -1,0 +1,6 @@
+beautifulsoup4
+epdb
+logzero
+packaging
+requests
+sh

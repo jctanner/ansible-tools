@@ -1,26 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env python
 
-# passing any positional argument will skip git pull
-USECACHE=$1
 
-CWD=$(pwd)
-CACHEDIR=$(ansible-tools-cachedir)/ansible.checkout.clean
-if [ ! -d $CACHEDIR ]; then
-    git clone https://github.com/ansible/ansible.git \
-        --recursive $CACHEDIR >/dev/null 2>&1
-else
-    if [ -z $USECACHE ]; then
-        cd $CACHEDIR ; git pull --rebase --recurse-submodules >/dev/null 2>&1
-        cd $CACHEDIR ; git submodule update --recursive >/dev/null 2>&1
-    fi
-fi
+from ansible_tools.utils import AnsibleVersionTester
 
-cd $CACHEDIR
-HEAD=$(git log --oneline -1 | awk '{print $1}')
-VERSIONS=$(git tag -l | fgrep -v alpha | fgrep -v beta)
-VERSIONS="$VERSIONS devel-$HEAD"
-VERSIONS=$(echo $VERSIONS | ansible-version-sort)
+def main():
+    AVT = AnsibleVersionTester()
+    AVT.list_versions()
 
-for VERSION in $VERSIONS; do
-    echo $VERSION
-done
+
+if __name__ == "__main__":
+    main()

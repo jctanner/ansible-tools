@@ -5,8 +5,8 @@
 rm -rf /tmp/atools.testenv
 virtualenv /tmp/atools.testenv
 source /tmp/atools.testenv/bin/activate
-python setup.py install
+python setup.py develop
+pip install -r requirements.txt
 
 ansible-tools-config --cachedir
-#ansible-tools-cachedir
-#ansible-list-versions
+ansible-list-versions

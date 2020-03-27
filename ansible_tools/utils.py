@@ -174,6 +174,7 @@ def _version_to_list(version):
     ]
 
     # 1.9.6-0.1.rc1
+    # 1.9.6.0-0.1.rc1
     if '-' in version:
         parts = version.split('-')
         subver = parts[-1].split('.')[-1]
@@ -188,7 +189,6 @@ def _version_to_list(version):
         try:
             _version[idx] = float(x)
         except Exception as e:
-            print(e)
             nx = x
             thissep = None
             for ids,separators in enumerate(separator_words):
@@ -204,24 +204,8 @@ def _version_to_list(version):
             if thissep == 'dev':
                 _version[idx-1] -= 10
 
-            #if thissep is None:
-            #    import epdb; epdb.st()
-
             nx = x.replace(thissep, '.' + '0' * ids)
-            #import epdb; epdb.st()
-
-            #print('%s == %s' % (x, nx))
-            #import epdb; epdb.st()
-
-            #_version[idx] = 0 - float(nx)
             _version[idx] = (0 + float(nx)) - idx
-            '''
-            try:
-                _version[idx] = 0 - float(nx)
-            except ValueError as e:
-                print(e)
-                import epdb; epdb.st()
-            '''
 
     return _version
 

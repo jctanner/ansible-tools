@@ -9,4 +9,5 @@ python setup.py develop
 pip install -r requirements.txt
 
 ansible-tools-config --cachedir
+ansible-tools-config --workdir
 ansible-list-versions

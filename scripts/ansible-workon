@@ -1,33 +1,29 @@
-#!/bin/bash
+#!/usr/bin/env python
 
-REPO=$1 #AP,AMC,AME
-ID=$2
-BASEDIR=~/workspace/issues
+import argparse
+import os
 
-TICKETDIR="$BASEDIR/$REPO-$ID"
-if [ ! -d $TICKETDIR ]; then
-    mkdir -p $TICKETDIR
-fi
+from logzero import logger
+from sh import chmod
 
-cd $TICKETDIR
+from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR
+
 
 #########################################
 #   INVENTORY 
 #########################################
 
-INVENTORYFILE=inventory
-if [ ! -f $INVENTORYFILE ]; then
-    echo "el6host" > inventory
-    echo "el7host" >> inventory
-    #echo "u1404 ansible_ssh_host=10.0.0.144" >> inventory
-    #echo "f23host ansible_ssh_host=10.0.0.123" >> inventory
-fi
+INVENTORY_INI = '''
+el6host
+el7host
+el8host
+'''
 
 #########################################
 #   INVENTORY SCRIPT
 #########################################
 
-cat << EOF > inventory.py
+INVENTORY_SCRIPT = '''
 #!/usr/bin/env python
 
 import json
@@ -51,14 +47,13 @@ for host in hosts:
     INV['_meta']['hostvars'][host]['ansible_connection'] = 'local'
 
 print json.dumps(INV, indent=2)
-EOF
-chmod +x inventory.py
+'''
 
 #########################################
 #   LARGE INVENTORY SCRIPT
 #########################################
 
-cat << EOF > inventory_scale.py
+INVENTORY_SCALE_SCRIPT = '''
 #!/usr/bin/env python
 
 import json
@@ -99,51 +94,50 @@ for idx, group in enumerate(groups):
         items = [x + '/' + str(uuid.uuid4()) for x in items]
         INV['_meta']['hostvars'][host]['TESTLIST'] = items
 
-print json.dumps(INV, indent=2)
-EOF
-chmod +x inventory_scale.py
+print(json.dumps(INV, indent=2))
+'''
 
 #########################################
 #   CONFIG
 #########################################
 
-cat << EOF > ansible.cfg
+ANSIBLE_CFG = '''
 [defaults]
 host_key_checking = False
-EOF
+'''
 
 
 #########################################
 #   PLAYBOOK 
 #########################################
 
-cat << EOF > site.yml
-- hosts: el6host
+PLAYBOOK = '''
+- hosts: el8host
   connection: local
   gather_facts: False
   tasks:
     - shell: whoami
-EOF
+'''
 
 #########################################
 #   TEST SCRIPT
 #########################################
 
-cat << EOF > test.sh
+TESTSH = '''
 #!/bin/bash
 export SSH_AUTH_SOCK=0
 VERSION=\$(ansible --version | head -n1 | awk '{print \$2}')
 ansible-playbook -vvvv -i inventory site.yml
 RC=\$?
 exit \$RC
-EOF
-chmod +x test.sh
+'''
+#chmod +x test.sh
 
 #########################################
 #   REPORT SCRIPT
 #########################################
 
-cat << EOF > report.sh
+REPORTSH = '''
 #!/bin/bash
 
 # | Tables        | Are           | Cool  |
@@ -168,3 +162,48 @@ EOF
 chmod +x report.sh
 echo $TICKETDIR
 echo $TICKETDIR > /tmp/ansible.workon
+'''
+
+
+def create_workdir(repo, number, refresh=False):
+
+    FILEMAP = [
+        ['ansible.cfg', ANSIBLE_CFG, False],
+        ['inventory', INVENTORY_INI, False],
+        ['inventory_script.py', INVENTORY_SCRIPT, True],
+        ['inventory_scale.py', INVENTORY_SCALE_SCRIPT, True],
+        ['site.yml', PLAYBOOK, False],
+        ['test.sh', TESTSH, True],
+        ['report.sh', REPORTSH, True]
+    ]
+
+    workdir = os.path.join(ANSIBLE_TOOLS_WORKDIR, repo + '-' + str(number))
+    if not os.path.exists(workdir) or refresh:
+        if not os.path.exists(workdir):
+            os.makedirs(workdir)
+        for fm in FILEMAP:
+            fn = os.path.join(workdir, fm[0])
+            if not os.path.exists(fn) or refresh:
+                logger.info('write %s' % fn)
+                with open(fn, 'w') as f:
+                    f.write(fm[1])
+                if fm[2]:
+                    logger.info('chmod +x %s' % fn)
+                    chmod('+x', fn)
+    return workdir
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--repo', default='ansible', choices=['ansible'], help="which repo the issue is from")
+    parser.add_argument('--number', required=True, help="which issue number you are working on")
+    parser.add_argument('--refresh', action='store_true', help="rewrite all the helper files")
+    args = parser.parse_args()
+    #import epdb; epdb.st()
+    workdir = create_workdir(args.repo, args.number, refresh=args.refresh)
+    print(workdir)
+
+
+if __name__ == "__main__":
+    main()

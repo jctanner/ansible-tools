@@ -4,15 +4,19 @@ import argparse
 import os
 
 from ansible_tools.config import ANSIBLE_TOOLS_CACHEDIR
+from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cachedir', action='store_true')    
+    parser.add_argument('--workdir', action='store_true')    
     args = parser.parse_args()
 
     if args.cachedir:
         print(ANSIBLE_TOOLS_CACHEDIR)
+    elif args.workdir:
+        print(ANSIBLE_TOOLS_WORKDIR)
 
 
 if __name__ == "__main__":

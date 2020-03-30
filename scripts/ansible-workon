@@ -6,9 +6,9 @@ import os
 from logzero import logger
 from sh import chmod
 
-from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR
-from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR_LOCKFILE
-from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR_CURRENT
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_WORKDIR
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_WORKDIR_LOCKFILE
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_WORKDIR_CURRENT
 
 
 #########################################
@@ -175,7 +175,7 @@ def create_workdir(repo, number, refresh=False):
         ['report.sh', REPORTSH, True]
     ]
 
-    workdir = os.path.join(ANSIBLE_TOOLS_WORKDIR, repo + '-' + str(number))
+    workdir = os.path.join(ANSIBLE_DEV_TOOLS_WORKDIR, repo + '-' + str(number))
     if not os.path.exists(workdir) or refresh:
         if not os.path.exists(workdir):
             os.makedirs(workdir)
@@ -189,7 +189,7 @@ def create_workdir(repo, number, refresh=False):
                     logger.info('chmod +x %s' % fn)
                     chmod('+x', fn)
 
-    with open(ANSIBLE_TOOLS_WORKDIR_LOCKFILE, 'w') as f:
+    with open(ANSIBLE_DEV_TOOLS_WORKDIR_LOCKFILE, 'w') as f:
         f.write(workdir + '\n')
 
     return workdir
@@ -205,7 +205,7 @@ def main():
     args = parser.parse_args()
 
     if args.current:
-        print(ANSIBLE_TOOLS_WORKDIR_CURRENT)
+        print(ANSIBLE_DEV_TOOLS_WORKDIR_CURRENT)
     else:
         assert args.number
         workdir = create_workdir(args.repo, args.number, refresh=args.refresh)

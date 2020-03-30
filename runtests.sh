@@ -15,7 +15,12 @@ ansible-tools-config --workdir
 ansible-list-versions
 
 rm -rf /tmp/test
-ANSIBLE_TOOLS_WORKDIR=/tmp/test ansible-workon --number=0001
+ANSIBLE_DEV_TOOLS_WORKDIR=/tmp/test ansible-workon --number=0001
+RC=$?
+if [[ $RC != 0 ]]; then
+    echo "ERROR running ansible-workon"
+    exit $RC
+fi
 
 cd /tmp/test/ansible-0001
 find .

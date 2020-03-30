@@ -13,7 +13,7 @@ with open('LICENSE') as f:
 
 setup(
     name='ansible-dev-tools',
-    version='0.1.3',
+    version='0.1.4',
     license='Apache',
     description='various tools for debuggers of ansible',
     long_description='see https://github.com/jctanner/ansible-tools/blob/master/README.md',
@@ -23,7 +23,7 @@ setup(
     packages=find_packages(),
     scripts=[x for x in glob.glob('scripts/*') if not '__pycache__' in x],
     python_requires='>=2.7',
-    install_reqs=[
+    install_requires=[
         'beautifulsoup4',
         'epdb',
         'logzero',

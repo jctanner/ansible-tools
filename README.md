@@ -13,14 +13,18 @@ Some useful tools for folks that triage/fix/debug/deal with github.com/ansible/a
 # installing
 
 for end users ...
-* pip install ansible-dev-tools
+```
+pip install ansible-dev-tools
+```
 
 for devs ...
-* virtualenv /tmp/atools.venv
-* source /tmp/atools.venv/bin/activate
-* git clone https://github.com/jctanner/ansible-tools
-* cd ansible-tools
-* python setup.py develop
+```
+virtualenv /tmp/atools.venv
+source /tmp/atools.venv/bin/activate
+git clone https://github.com/jctanner/ansible-tools
+cd ansible-tools
+python setup.py develop
+```
 
 # Usage
 
@@ -32,9 +36,9 @@ The most common thing you'll probably use from this set of tools is ansible-test
 4. ansible-test-versions --start=2.9.0 test.sh
 
 The command is going to do a few things ...
-    * fetch all release tarballs from releases.ansible.com
-    * extract all the tarballs
-    * add a hacking/env-setup script from devel to all the extrated dirs
-    * iterate through releases defined by the arguments (or all) and run test.sh with them
+* fetch all release tarballs from releases.ansible.com
+* extract all the tarballs
+* add a hacking/env-setup script from devel to all the extrated dirs
+* iterate through releases defined by the arguments (or all) and run test.sh with them
 
 The test.sh script is a minimal sort of "hello world" script that runs a simple playbook. Depending on what you are trying to fix or test, you'll need to edit the test.sh, site.yml, ansible.cfg and inventory files created by the ansible-workon script.

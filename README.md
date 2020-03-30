@@ -17,7 +17,7 @@ for end users ...
 
 for devs ...
 * virtualenv /tmp/atools.venv
-* source /tmp/atools.venv
+* source /tmp/atools.venv/bin/activate
 * git clone https://github.com/jctanner/ansible-tools
 * cd ansible-tools
 * python setup.py develop

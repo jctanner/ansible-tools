@@ -3,9 +3,9 @@
 import argparse
 import os
 
-from ansible_tools.config import ANSIBLE_TOOLS_CACHEDIR
-from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR
-from ansible_tools.config import ANSIBLE_TOOLS_WORKDIR_CURRENT
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_CACHEDIR
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_WORKDIR
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_WORKDIR_CURRENT
 
 
 def main():
@@ -16,11 +16,11 @@ def main():
     args = parser.parse_args()
 
     if args.cachedir:
-        print(ANSIBLE_TOOLS_CACHEDIR)
+        print(ANSIBLE_DEV_TOOLS_CACHEDIR)
     elif args.workdir:
-        print(ANSIBLE_TOOLS_WORKDIR)
+        print(ANSIBLE_DEV_TOOLS_WORKDIR)
     elif args.current_workdir:
-        print(ANSIBLE_TOOLS_WORKDIR_CURRENT)
+        print(ANSIBLE_DEV_TOOLS_WORKDIR_CURRENT)
 
 
 if __name__ == "__main__":

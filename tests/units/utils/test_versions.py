@@ -5,7 +5,8 @@ import json
 
 import unittest
 
-from ansible_tools.utils import sort_versions
+from ansible_dev_tools.utils import sort_versions
+
 
 class TestVersionSorting(unittest.TestCase):
 

@@ -24,7 +24,7 @@ from logzero import logger
 from distutils.version import LooseVersion
 from packaging.version import Version
 
-from ansible_tools.config import ANSIBLE_TOOLS_CACHEDIR
+from ansible_dev_tools.config import ANSIBLE_DEV_TOOLS_CACHEDIR
 
 
 
@@ -129,7 +129,7 @@ class AnsibleVersionTester(object):
 
     def __init__(self, cachedir=None):
         if cachedir is None:
-            cachedir = ANSIBLE_TOOLS_CACHEDIR
+            cachedir = ANSIBLE_DEV_TOOLS_CACHEDIR
         self.cachedir = cachedir
         self.extractdir = os.path.join(self.cachedir, 'extracted')
         self.develdir = os.path.join(self.cachedir, 'checkouts', 'ansible-devel')

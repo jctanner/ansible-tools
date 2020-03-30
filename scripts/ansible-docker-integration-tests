@@ -10,7 +10,7 @@ echo $RWORKDIR
 ssh root@dockerhost "if [ ! -d $CWD ]; then mkdir -p $CWD; fi"
 rsync -avz --links $CWD/* root@dockerhost:$CWD/.
 
-CMD="cd $PWD/ansible.ansible ; TARGET=ubuntu1404 test/utils/run_tests.sh"
+CMD="cd $PWD/ansible.ansible ; TARGET=ubuntu1804 test/utils/run_tests.sh"
 ssh -tt root@dockerhost "$CMD"
 RC=$?
 exit $RC

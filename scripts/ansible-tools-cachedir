@@ -1,9 +1,0 @@
-#!/bin/bash
-
-if [[ -d /var/cache/ansibletools ]] && [[ -w /var/cache/ansibletools ]]; then
-    ATCACHEDIR=/var/cache/ansibletools
-else
-    ATCACHEDIR=~/.ansibletools
-fi
-echo $ATCACHEDIR
-

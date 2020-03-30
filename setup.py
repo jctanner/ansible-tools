@@ -16,7 +16,7 @@ setup(
     version='0.1.2',
     license='Apache',
     description='various tools for debuggers of ansible',
-    long_descripton='see https://github.com/jctanner/ansible-tools/blob/master/README.md'
+    long_descripton='see https://github.com/jctanner/ansible-tools/blob/master/README.md',
     author='James Tanner',
     author_email='tanner.jc@gmail.com',
     url='https://github.com/jctanner/ansible-tools',

@@ -13,10 +13,10 @@ with open('LICENSE') as f:
 
 setup(
     name='ansible-dev-tools',
-    version='0.1.2',
+    version='0.1.3',
     license='Apache',
     description='various tools for debuggers of ansible',
-    long_descripton='see https://github.com/jctanner/ansible-tools/blob/master/README.md',
+    long_description='see https://github.com/jctanner/ansible-tools/blob/master/README.md',
     author='James Tanner',
     author_email='tanner.jc@gmail.com',
     url='https://github.com/jctanner/ansible-tools',

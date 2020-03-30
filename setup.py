@@ -19,5 +19,14 @@ setup(
     url='https://github.com/jctanner/ansible-tools',
     license=license,
     packages=find_packages(),
-    scripts=[x for x in glob.glob('scripts/*') if not '__pycache__' in x]
+    scripts=[x for x in glob.glob('scripts/*') if not '__pycache__' in x],
+    python_requires='>=2.7'
+    install_requires=[
+        'beautifulsoup4',
+        'epdb',
+        'logzero',
+        'packaging',
+        'requests',
+        'sh'
+    ]
  )

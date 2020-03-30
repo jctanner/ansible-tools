@@ -3,18 +3,20 @@
 INVERSION=$1
 TESTSCRIPT=$2
 
-echo "# running ansible-checkout-versions ..."
-ansible-checkout-versions
+#echo "# running ansible-checkout-versions ..."
+#ansible-checkout-versions
 
 echo "# running ansible-list-versions ..."
 CWD=$(pwd)
 if [[ $INVERSION == "devel"* ]]; then
     VERSION=$(ansible-list-versions | fgrep $INVERSION | tail -n1)
 else
-    VERSION=$(ansible-list-versions | egrep ^v$INVERSION | tail -n1)
+    VERSION=$(ansible-list-versions | egrep ^$INVERSION | tail -n1)
 fi
-BASEDIR=/var/cache/ansible/version_checkouts
-CACHEDIR=/var/cache/ansible/ansible.checkout.clean
+
+ADTBASE=$(ansible-tools-config --cachedir)
+BASEDIR=$ADTBASE/extracted
+CACHEDIR=$ADTBASE/checkouts/ansible-devel
 
 (
 echo "###################################"
@@ -26,7 +28,7 @@ echo $VERSION > ansible.version
 if [[ $VERSION == "devel"* ]]; then
     VERSIONDIR="$CACHEDIR"
 else
-    VERSIONDIR="$BASEDIR/ansible.$VERSION"
+    VERSIONDIR="$BASEDIR/ansible-$VERSION"
 fi
 echo "# running  $VERSIONDIR/hacking/env-setup ..."
 HACKING="$VERSIONDIR/hacking/env-setup"

@@ -27,3 +27,5 @@ find .
 
 ansible-test-versions --help
 ansible-test-versions --version=2.9.0 test.sh
+
+ansible-test-version 2.8.0 test.sh

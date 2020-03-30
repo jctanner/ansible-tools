@@ -38,7 +38,9 @@ class Args(object):
 def to_safe(instr):
     if isinstance(instr, bytes):
         return instr.decode('utf-8')
-    import epdb; epdb.st()
+    #import epdb; epdb.st()
+    return instr
+
 
 def run_command(args):
     print(args)

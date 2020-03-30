@@ -6,6 +6,7 @@ publish:
 	twine upload dist/*
 
 integration:
+	./tests/integration/runtests.sh
 
 units:
 	PYTHONPATH=$(shell pwd) pytest tests

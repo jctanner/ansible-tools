@@ -7,6 +7,8 @@ clean:
 	find . -type f -name "*.pyc" | xargs rm -f
 
 publish:
+	rm -rf dist
+	python setup.py sdist
 	twine upload dist/*
 
 integration:
